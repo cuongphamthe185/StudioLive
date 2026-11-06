@@ -1,9 +1,11 @@
 'use strict';
 const path = require('path');
+const fs = require('fs');
 const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, nativeTheme } = require('electron');
 const { Settings } = require('./settings');
 const { LiveService, friendlyError } = require('./live');
 const { OverlayServer } = require('./server');
+const { QuizStore } = require('./quiz-store');
 
 app.setName('StudioLive');
 // Cho phép phát âm thanh hiệu ứng mà không cần bấm vào trang trước
@@ -12,6 +14,9 @@ nativeTheme.themeSource = 'dark';
 
 let win = null;
 let settings;
+let quizStore;
+let quizSession = null;
+let quizBatchStartedAt = 0;
 const live = new LiveService();
 let paused = false;
 async function connectLive(username) {
@@ -29,19 +34,29 @@ async function connectLive(username) {
 const overlay = new OverlayServer({
   getConfig: () => settings.get(),
   getSnapshot: () => live.snapshot(),
-  getPaused: () => paused
+  getPaused: () => paused,
+  getQuizData: () => quizSession?.currentData || quizStore?.activeData(),
+  getQuizState: () => quizSession ? {
+    active: !!quizSession.currentData,
+    running: !!quizSession.running,
+    index: settings?.get().overlay.quizIndex || 0,
+    reveal: !!settings?.get().overlay.quizReveal,
+    seconds: quizSession.seconds
+  } : null
 });
 
 let serverState = { running: false, port: 0, error: '', clients: 0 };
 let outWin = null;
+let outWinReady = false;
 
 // Cửa sổ "màn hình phát live": chỉ có cảnh overlay, để TikTok LIVE Studio / OBS quay cửa sổ này
 function openOutputWindow() {
   if (outWin && !outWin.isDestroyed()) {
     outWin.show();
     outWin.focus();
-    return;
+    return outWinReady;
   }
+  outWinReady = false;
   outWin = new BrowserWindow({
     width: 540,
     height: 960,
@@ -50,16 +65,21 @@ function openOutputWindow() {
     title: 'StudioLive - Man hinh phat live',
     backgroundColor: '#000000',
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, backgroundThrottling: false }
   });
   outWin.setAspectRatio(9 / 16);
   outWin.on('page-title-updated', (e) => e.preventDefault());
+  outWin.webContents.once('did-finish-load', () => {
+    outWinReady = true;
+    send('output:state', { open: true });
+  });
   outWin.loadURL(`http://127.0.0.1:${serverState.port}/?output`);
   outWin.on('closed', () => {
     outWin = null;
+    outWinReady = false;
     send('output:state', { open: false });
   });
-  send('output:state', { open: true });
+  return false;
 }
 
 const send = (channel, payload) => {
@@ -79,6 +99,12 @@ live.on('event', (e) => {
 overlay.onClients = (n) => {
   serverState.clients = n;
   send('server:state', serverState);
+};
+overlay.onQuizAdvance = (index) => {
+  if (!settings) return;
+  if (Number(index) === -2) { if (quizSession) quizSession.running = false; return; }
+  if (Number(index) < 0) { startNextQuizBatch(); return; }
+  settings.update({ overlay: { quizIndex: Math.max(0, Math.round(Number(index) || 0)), quizReveal: false } });
 };
 
 async function startServer(port) {
@@ -111,10 +137,16 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      backgroundThrottling: false
     }
   });
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  win.webContents.session.setPermissionRequestHandler((requestingContents, permission, callback) => {
+    callback(permission === 'display-capture' && requestingContents === win?.webContents);
+  });
+  const rendererUrl = process.env.STUDIO_RENDERER_URL;
+  if (rendererUrl) win.loadURL(rendererUrl);
+  else win.loadFile(path.join(__dirname, '..', 'renderer', 'dist', 'index.html'));
   win.once('ready-to-show', () => { if (!process.env.STUDIO_SELFTEST) win.show(); });
   if (process.env.STUDIO_SELFTEST) selfTest();
 
@@ -132,6 +164,7 @@ ipcMain.handle('app:init', () => ({
   settings: settings.get(),
   server: serverState,
   live: live.snapshot(),
+  outputOpen: !!outWinReady,
   paused,
   platform: process.platform,
   version: app.getVersion()
@@ -140,6 +173,7 @@ ipcMain.handle('app:init', () => ({
 ipcMain.handle('settings:update', async (_e, patch) => {
   const before = settings.get();
   const next = settings.update(patch || {});
+  if (next.autoReconnect !== before.autoReconnect) live.setAutoReconnect(next.autoReconnect);
   overlay.broadcast('config', next.overlay);
   if (next.overlay.mode !== before.overlay.mode) {
     // đổi chế độ: mọi trang đang hiện cảnh (LIVE Studio, OBS, xem trước) tải lại để sang cảnh mới
@@ -150,6 +184,11 @@ ipcMain.handle('settings:update', async (_e, patch) => {
 });
 
 ipcMain.handle('live:connect', (_e, username) => connectLive(username));
+
+ipcMain.handle('capture:source-id', (event) => {
+  if (!win || win.isDestroyed() || event.sender !== win.webContents) throw new Error('Không xác định được cửa sổ điều khiển.');
+  return win.webContents.getMediaSourceId(event.sender);
+});
 
 ipcMain.handle('live:disconnect', async () => {
   await live.stop();
@@ -184,6 +223,124 @@ ipcMain.handle('rap:command', (_e, c) => {
   overlay.broadcast('rap', { action: c.action, text: typeof c.text === 'string' ? c.text.slice(0, 400) : undefined, n: Number(c.n) || 0 });
   return true;
 });
+
+function startNextQuizBatch() {
+  if (!quizSession || !quizStore) return { ok: false, message: 'Chưa có phiên thi đang chạy.' };
+  const now = Date.now();
+  if (now - quizBatchStartedAt < 900) return { ok: true, ignoredDuplicate: true };
+  const source = quizStore.bankQuestionsForClass(quizSession.licenseClass);
+  const pool = source.questions || [];
+  if (!pool.length) return { ok: false, message: `Hạng ${quizSession.licenseClass} hiện chưa được gán câu hỏi.` };
+  const wanted = Math.min(quizSession.questionCount, pool.length);
+  const byId = new Map(pool.map((question) => [question.id, question]));
+  let remaining = quizSession.remainingIds.filter((id) => byId.has(id));
+  if (remaining.length < wanted) {
+    const carried = new Set(remaining);
+    const refill = pool.map((question) => question.id).filter((id) => !carried.has(id));
+    for (let i = refill.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [refill[i], refill[j]] = [refill[j], refill[i]]; }
+    remaining = [...remaining, ...refill];
+  }
+  const ids = remaining.splice(0, wanted);
+  quizSession.remainingIds = remaining;
+  quizSession.lastBatchIds = ids;
+  quizBatchStartedAt = now;
+  const data = { ...source, title: `${source.title} · HẠNG ${quizSession.licenseClass}`, questions: ids.map((id) => byId.get(id)) };
+  quizSession.currentData = data;
+  quizSession.running = true;
+  settings.update({ overlay: { quizLicenseClass: quizSession.licenseClass, quizSeconds: quizSession.seconds, quizSessionCount: data.questions.length, quizIndex: 0, quizReveal: false } });
+  overlay.broadcast('config', settings.get().overlay);
+  overlay.broadcast('quiz:data', data);
+  overlay.broadcast('quiz', { action: 'start', index: 0, reveal: false, seconds: quizSession.seconds });
+  return { ok: true, count: data.questions.length, poolCount: pool.length, licenseClass: quizSession.licenseClass, seconds: quizSession.seconds };
+}
+
+ipcMain.handle('quiz:command', (_e, c) => {
+  const actions = ['start', 'pause', 'next', 'prev', 'reveal', 'reset'];
+  if (!c || !actions.includes(c.action)) return false;
+  let o = settings.get().overlay;
+  if (c.action === 'start') {
+    const licenseClass = quizStore.hasLicenseClass(c.licenseClass) ? c.licenseClass : o.quizLicenseClass;
+    const seconds = Math.min(120, Math.max(5, Math.round(Number(c.seconds) || o.quizSeconds)));
+    const classSettings = quizStore.listLicenseClasses().find((item) => item.code === licenseClass);
+    const requestedCount = Math.min(600, Math.max(1, Number(classSettings?.liveCount) || 25));
+    const pool = quizStore.bankQuestionsForClass(licenseClass).questions;
+    if (!pool?.length) return { ok: false, message: `Chưa gán câu hỏi cho hạng ${licenseClass}. Vào Quản lý hạng GPLX để chọn câu từ ngân hàng.` };
+    quizSession = { licenseClass, seconds, questionCount: requestedCount, remainingIds: [], lastBatchIds: [], currentData: null, running: false };
+    quizBatchStartedAt = 0;
+    return startNextQuizBatch();
+  }
+  if (c.action === 'pause') { if (quizSession) quizSession.running = false; overlay.broadcast('quiz', { action: 'pause' }); return true; }
+  let index = o.quizIndex || 0;
+  let reveal = !!o.quizReveal;
+  const count = Math.max(1, Number(o.quizSessionCount) || quizStore.bankQuestionsForClass(o.quizLicenseClass).questions.length);
+  if (c.action === 'next') {
+    if (index + 1 >= count && o.quizLoop === false) {
+      if (quizSession) quizSession.running = false;
+      overlay.broadcast('quiz', { action: 'finish' });
+      return true;
+    }
+    if (index + 1 >= count) return startNextQuizBatch();
+    index = (index + 1) % count; reveal = false;
+  }
+  if (c.action === 'prev') { index = (index + count - 1) % count; reveal = false; }
+  if (c.action === 'reveal') reveal = !reveal;
+  if (c.action === 'reset') { index = 0; reveal = false; }
+  settings.update({ overlay: { quizIndex: index, quizReveal: reveal } });
+  overlay.broadcast('quiz', { action: c.action, index, reveal, seconds: o.quizSeconds });
+  return true;
+});
+
+function publishQuiz(data = quizStore.activeData()) {
+  settings.update({ overlay: { quizIndex: 0, quizReveal: false } });
+  overlay.broadcast('config', settings.get().overlay);
+  const licenseClass = settings.get().overlay.quizLicenseClass;
+  const liveData = data ? { ...data, questions: data.questions.filter((q) => q.classes.includes(licenseClass)) } : data;
+  overlay.broadcast('quiz:data', liveData);
+  return { sets: quizStore.listSets(), activeId: quizStore.activeId(), data };
+}
+ipcMain.handle('quiz:list', () => ({ sets: quizStore.listSets(), activeId: quizStore.activeId(), data: quizStore.activeData() }));
+ipcMain.handle('quiz:set-active', (_e, id) => publishQuiz(quizStore.setActive(id)));
+ipcMain.handle('quiz:create-set', (_e, title) => { const data = quizStore.createSet(title); return publishQuiz(data); });
+ipcMain.handle('quiz:rename-set', (_e, id, title) => { quizStore.renameSet(id, title); return publishQuiz(); });
+ipcMain.handle('quiz:delete-set', (_e, id) => publishQuiz(quizStore.deleteSet(id)));
+ipcMain.handle('quiz:save-question', (_e, q) => publishQuiz(quizStore.saveQuestion(q)));
+ipcMain.handle('quiz:delete-question', (_e, id) => publishQuiz(quizStore.deleteQuestion(id)));
+ipcMain.handle('quiz:import-questions', (_e, setId, items) => publishQuiz(quizStore.importQuestions(setId, items)));
+ipcMain.handle('quiz:bank-questions', () => {
+  ensureMeoThiLaiXeBank();
+  return quizStore.getBank();
+});
+ipcMain.handle('quiz:license-classes', () => quizStore.listLicenseClasses());
+ipcMain.handle('quiz:license-class-create', (_e, code, name) => quizStore.createLicenseClass(code, name));
+ipcMain.handle('quiz:license-class-update', (_e, code, name) => quizStore.updateLicenseClass(code, name));
+ipcMain.handle('quiz:license-class-live-count', (_e, code, count) => quizStore.updateLicenseClassLiveCount(code, count));
+ipcMain.handle('quiz:license-class-delete', (_e, code) => {
+  const classes = quizStore.deleteLicenseClass(code);
+  const current = settings.get().overlay.quizLicenseClass;
+  if (!quizStore.hasLicenseClass(current)) settings.update({ overlay: { quizLicenseClass: classes[0].code } });
+  return classes;
+});
+ipcMain.handle('quiz:bank-save-question', (_e, q) => quizStore.saveBankQuestion(q));
+ipcMain.handle('quiz:bank-delete-question', (_e, id) => quizStore.deleteBankQuestion(id));
+ipcMain.handle('quiz:bank-class-questions', (_e, licenseClass) => quizStore.bankQuestionsForClass(licenseClass));
+ipcMain.handle('quiz:assign-bank-class', (_e, licenseClass, ids) => {
+  const data = quizStore.assignBankQuestions(licenseClass, ids);
+  publishQuiz(quizStore.activeData());
+  return data;
+});
+ipcMain.handle('quiz:copy-questions', (_e, targetId, sourceIds, licenseClass) => publishQuiz(quizStore.copyQuestions(targetId, sourceIds, licenseClass)));
+
+function ensureMeoThiLaiXeBank() {
+  quizStore.localizeMeoThiImages();
+  const bankPath = path.join(__dirname, '..', 'data', 'quiz-600-meothilaixe.json');
+  if (!fs.existsSync(bankPath)) return;
+  const bank = JSON.parse(fs.readFileSync(bankPath, 'utf8'));
+  if (!quizStore.listSets().some((set) => set.title === bank.title)) {
+    const set = quizStore.createSet(bank.title);
+    quizStore.importQuestions(set.id, bank.questions);
+  }
+  quizStore.initializeBankClasses(bank.questions);
+}
 
 ipcMain.handle('dialog:pickVideos', async () => {
   const r = await dialog.showOpenDialog(win, {
@@ -222,8 +379,7 @@ ipcMain.handle('dialog:pickSound', async (_e, kind) => {
 });
 
 ipcMain.handle('output:open', () => {
-  openOutputWindow();
-  return true;
+  return { open: openOutputWindow() };
 });
 
 ipcMain.handle('tiktok:login', () => {
@@ -331,6 +487,8 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     settings = new Settings(app.getPath('userData'));
+    quizStore = new QuizStore(app.getPath('userData'));
+    ensureMeoThiLaiXeBank();
     await startServer(settings.get().port);
     createWindow();
     app.on('activate', () => {

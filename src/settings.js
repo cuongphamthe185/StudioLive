@@ -17,7 +17,23 @@ const DEFAULTS = {
     showLikeCounter: true,
     showViewerCounter: true,
     showTopGifter: true,
-    mode: 'game',               // game (Nhà Ma) | cards (thẻ bình luận) | chua (Đi Chùa) | rap (Rạp Phim)
+    mode: 'game',               // game | chua | rap | quiz
+    quizIndex: 0,
+    quizReveal: false,
+    quizLicenseClass: 'B',
+    quizSeconds: 5,
+    quizQuestionCount: 25,
+    quizLoop: true,
+    quizVoice: false,
+    quizMusic: false,
+    quizSpeakAnswer: true,
+    quizTickSound: true,
+    quizRate: 1,
+    quizVoiceGender: 'male',
+    quizBgColor: '#07151b',
+    quizAccentColor: '#2dd4bf',
+    quizCardColor: '#071b23',
+    quizTextColor: '#ffffff',
     rapName: '',                // tên rạp (tiêu đề + giọng đọc)
     rapVoice: true,
     rapGreet: true,
@@ -105,13 +121,21 @@ class Settings {
     o.ambientVolume = Math.min(1, Math.max(0, o.ambientVolume));
     o.liveBoost = Math.min(40, Math.max(0, Math.round(o.liveBoost)));
     if (!['drone', 'wind', 'rain', 'church', 'heartbeat', 'musicbox', 'whispers', 'forest'].includes(o.ambientPreset)) o.ambientPreset = 'drone';
-    if (!['game', 'cards', 'chua', 'rap'].includes(o.mode)) o.mode = 'game';
+    if (!['game', 'cards', 'chua', 'rap', 'quiz'].includes(o.mode)) o.mode = 'game';
     o.rapName = String(o.rapName).replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 40);
     o.rapRate = Math.min(1.3, Math.max(0.6, o.rapRate));
     if (!['classic', 'gold', 'imax', 'home'].includes(o.rapTheme)) o.rapTheme = 'classic';
     o.rapIdleMin = Math.min(120, Math.max(0, Math.round(o.rapIdleMin)));
     o.rapVolume = Math.min(1, Math.max(0, o.rapVolume));
     o.rapLikeGoal = Math.min(100000, Math.max(10, Math.round(o.rapLikeGoal)));
+    if (!/^[A-Z0-9]{1,8}$/.test(String(o.quizLicenseClass || ''))) o.quizLicenseClass = 'B';
+    o.quizSeconds = Math.min(120, Math.max(5, Math.round(o.quizSeconds) || 5));
+    o.quizQuestionCount = Math.min(600, Math.max(1, Math.round(o.quizQuestionCount) || 25));
+    o.quizRate = Math.min(1.5, Math.max(0.6, Number(o.quizRate) || 1));
+    if (!['female', 'male', 'alternating', 'both'].includes(o.quizVoiceGender)) o.quizVoiceGender = 'male';
+    for (const [key, fallback] of [['quizBgColor','#07151b'],['quizAccentColor','#2dd4bf'],['quizCardColor','#071b23'],['quizTextColor','#ffffff']]) {
+      if (!/^#[0-9a-f]{6}$/i.test(o[key])) o[key] = fallback;
+    }
     o.rapVideos = (Array.isArray(o.rapVideos) ? o.rapVideos : [])
       .filter((x) => typeof x === 'string' && x && (!/^[a-z]+:/i.test(x) || /^https?:\/\//i.test(x) || /^[a-z]:[\\/]/i.test(x)))
       .map((x) => x.trim().slice(0, 2000)).slice(0, 100);

@@ -17,6 +17,7 @@ App máy tính tạo **cảnh tương tác cho TikTok LIVE**, chạy hoàn toàn
 - **👻 Live Ma Online** — người xem hoá ma, gõ `hù` / `trốn` / `tìm` / `bùa` / `gọi hồn` / `tắt đèn`… để chơi với nhau; quà lớn gọi Bà Ma + jumpscare; vòng TRỐN TÌM định kỳ.
 - **🪷 Đi Chùa Online** — chánh điện; người xem ngồi bồ đoàn, gõ `adidaphat` lên thắp hương; quà làm sen vàng nở, giọng đọc cảm ơn và chúc; thả tim đủ mục tiêu thì mưa hoa sen.
 - **🎬 Rạp Phim Online** — phòng chiếu phim; người xem được chào, vào ghế ngồi; chiếu danh sách phim (link YouTube, .mp4/.webm hoặc file trên máy); lệnh `vỗ tay` / `haha` / `wow` / `bắp`; quà = ghế VIP; đủ tim = mưa bắp rang. 4 kiểu phòng: Cổ điển, VIP Gold, IMAX, Gia đình.
+- **🚦 Ôn thi GPLX** — chọn hạng, xáo ngẫu nhiên ngân hàng câu hỏi, đặt thời gian mỗi câu; hết giờ tự hiện đáp án/kết quả rồi chuyển câu. Tạo/sửa/xoá câu hỏi trong app hoặc nhập JSON; dữ liệu lưu trong SQLite trên máy. Người xem bình luận A/B/C/D để trả lời.
 
 Mở tab nào thì cảnh đó chạy trên live.
 
@@ -70,7 +71,8 @@ Cần **Node.js 18+** và **git**.
 git clone https://github.com/tanthuan031/StudioLive.git
 cd StudioLive
 npm install
-npm start
+npm start          # Vue/Vite dev mode: tự cập nhật renderer khi lưu file
+# npm run start:prod  # chạy bản renderer đã build
 ```
 
 Đóng gói bản cài (không ký số):
@@ -91,13 +93,15 @@ src/direct.js     Đọc sự kiện qua trình duyệt ẩn + giải mã protob
 src/server.js     Server overlay Express + Socket.IO (chỉ 127.0.0.1) + giọng đọc /api/tts
 src/tts.js        Giọng đọc tiếng Việt (Microsoft Edge, dự phòng Google)
 src/settings.js   Lưu cài đặt trong thư mục userData
-renderer/         Giao diện điều khiển
+renderer/         Giao diện điều khiển Vue 3, build bằng Vite vào renderer/dist trước khi chạy/đóng gói
+renderer/App.vue  Khung giao diện điều khiển; LiveMaView.vue, TempleView.vue, CinemaView.vue, LicenseQuizView.vue là các cảnh Vue; QuizManager.vue quản lý ngân hàng đề
+renderer/app.js   Cầu nối sự kiện hiện có cho các màn hình và tính năng chưa chuyển thành Vue component
 overlay/          Trang hiển thị trên live: game.js (Nhà Ma), temple.js (Đi Chùa), rap.js (Rạp Phim), faces.js, audio.js
 overlay/chua-assets/  Ảnh, nhân vật, hiệu ứng, nhạc của cảnh Đi Chùa
 build/icon.png    Icon app
 ```
 
-Cài đặt người dùng lưu tại `~/Library/Application Support/StudioLive/settings.json` (macOS), `%APPDATA%\StudioLive\settings.json` (Windows).
+Cài đặt người dùng lưu tại `~/Library/Application Support/StudioLive/settings.json` (macOS), `%APPDATA%\StudioLive\settings.json` (Windows). Ngân hàng câu hỏi lưu trong `quiz.sqlite` cùng thư mục dữ liệu ứng dụng.
 
 > Lưu ý: giữ `tiktok-live-connector` ở **2.0.0** (MIT). Các bản mới hơn dùng giấy phép AGPL-3.0.
 

@@ -72,6 +72,19 @@ class LiveService extends EventEmitter {
     this.emit('status', { status, message, username: this.username, retry: this.retry });
   }
 
+  setAutoReconnect(enabled) {
+    if (!this.opts) this.opts = {};
+    this.opts.autoReconnect = !!enabled;
+    if (!enabled) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+      if (this.status === 'reconnecting') this.setStatus('error', 'Đã tắt tự động kết nối lại.');
+      return;
+    }
+    // Cho phép bật lại ngay sau khi kết nối đã rơi vào trạng thái lỗi.
+    if (this.status === 'error' && this.username && !this.manualStop) this.scheduleReconnect('Đã bật tự động kết nối lại');
+  }
+
   snapshot() {
     return {
       status: this.status,
@@ -129,7 +142,7 @@ class LiveService extends EventEmitter {
       this.conn = null;
       conn.removeAllListeners();
       conn.disconnect?.().catch?.(() => {});
-      if (!this.manualStop && this.opts?.autoReconnect && !offline && this.retry < 8) {
+      if (!this.manualStop && this.opts?.autoReconnect && !offline) {
         this.scheduleReconnect(message);
       } else {
         this.setStatus('error', message);

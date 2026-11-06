@@ -5,9 +5,12 @@
   "description": "StudioLive — cảnh tương tác cho TikTok LIVE: Live Ma Online, Đi Chùa Online & Rạp Phim Online",
   "main": "src/main.js",
   "scripts": {
-    "start": "electron .",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win"
+    "dev": "node scripts/dev.js",
+    "build:renderer": "vite build --config renderer/vite.config.mjs",
+    "start": "npm run dev",
+    "start:prod": "npm run build:renderer && electron .",
+    "dist:mac": "npm run build:renderer && electron-builder --mac",
+    "dist:win": "npm run build:renderer && electron-builder --win"
   },
   "author": "Tanthuan031 (https://github.com/tanthuan031)",
   "license": "MIT",
@@ -18,8 +21,11 @@
     "tiktok-live-connector": "2.0.0"
   },
   "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.10",
     "electron": "45.2.1",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "vite": "^8.3.6",
+    "vue": "^3.5.44"
   },
   "build": {
     "appId": "vn.studiolive.app",
@@ -33,6 +39,7 @@
       "src/**/*",
       "renderer/**/*",
       "overlay/**/*",
+      "data/**/*",
       "package.json"
     ],
     "asar": true,

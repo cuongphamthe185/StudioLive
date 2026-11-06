@@ -1,0 +1,20 @@
+{
+  "characters": [
+    { "file": "characters/dog1.gif", "height": 1.15, "faces": "right" },
+    { "file": "characters/dog2.gif", "height": 0.85, "faces": "right" },
+    { "file": "characters/dog3.gif", "height": 0.9, "faces": "right" },
+    { "file": "characters/dog4.gif", "height": 0.9, "faces": "right" }
+  ],
+  "dj": { "file": "stage/dj.gif", "width": 330 },
+  "wings": { "pair": "wings/gold-angel-wings.png", "top1": "", "gold": "", "silver": "", "bronze": "" },
+  "crown": "decor/crown.svg",
+  "screen": ["screen/space.jpg"],
+  "sky": { "file": "sky/night-city-4k.jpg", "low": "sky/night-city-2k.jpg", "crop": [0.36, 0.12, 0.82, 0.52], "brightness": 0.75, "height": 6000, "y": 500 },
+  "models": {
+    "stage": { "file": "models/concert-stage.glb", "scale": 40 },
+    "djController": { "file": "models/dj-pioneer.glb", "scale": 100, "y": 19.7 },
+    "movingHead": { "file": "models/moving-head.glb", "scale": 110 },
+    "spotLight": { "file": "models/spot-light.glb", "scale": 90 },
+    "speaker": { "file": "models/speaker.glb", "scale": 300 }
+  }
+}

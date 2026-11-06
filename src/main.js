@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, nativeTheme } = r
 const { Settings } = require('./settings');
 const { LiveService, friendlyError } = require('./live');
 const { OverlayServer } = require('./server');
+const { ClubScore } = require('./clubScore');
 
 app.setName('StudioLive');
 // Cho phép phát âm thanh hiệu ứng mà không cần bấm vào trang trước
@@ -66,13 +67,25 @@ const send = (channel, payload) => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 };
 
+// ---- Điểm DJ Club: tính ở đây để mọi màn hình phát dùng chung, tải lại trang không mất điểm ----
+const clubScore = new ClubScore(() => (settings ? settings.get().overlay : {}));
+clubScore.on('rank', (p) => {
+  overlay.broadcast('clubRank', p);
+  send('club:rank', p);
+});
+overlay.onConnection = (socket) => socket.emit('clubRank', clubScore.payload());
+
 // ---- Chuyển tiếp sự kiện live -> dashboard + overlay ----
-live.on('status', (s) => send('live:status', s));
+live.on('status', (s) => {
+  if (s.status === 'live') clubScore.setRoom(live.stats.roomId); // phòng live mới -> phiên điểm mới
+  send('live:status', s);
+});
 live.on('stats', (s) => {
   send('live:stats', s);
   overlay.broadcast('stats', s);
 });
 live.on('event', (e) => {
+  clubScore.onEvent(e);
   send('live:event', e);
   overlay.broadcast('live', e);
 });
@@ -133,6 +146,7 @@ ipcMain.handle('app:init', () => ({
   server: serverState,
   live: live.snapshot(),
   paused,
+  clubRank: clubScore.payload(),
   platform: process.platform,
   version: app.getVersion()
 }));
@@ -163,6 +177,7 @@ ipcMain.handle('overlay:test', (_e, type) => {
   }
   const demo = demoEvent(type);
   if (demo) {
+    clubScore.onEvent(demo);
     overlay.broadcast('live', demo);
     send('live:event', { ...demo, test: true });
   }
@@ -200,6 +215,37 @@ ipcMain.handle('chua:command', (_e, c) => {
   if (!c || !actions.includes(c.action)) return false;
   overlay.broadcast('chua', { action: c.action, text: typeof c.text === 'string' ? c.text.slice(0, 400) : undefined, n: Number(c.n) || undefined });
   return true;
+});
+
+// Lệnh điều khiển cảnh DJ Club: mưa pháo giấy, cả sàn nhảy, thêm chó thử, chuyển bài…
+ipcMain.handle('club:resetScore', () => {
+  clubScore.reset();
+  return true;
+});
+
+ipcMain.handle('dialog:pickImages', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Chọn ảnh cho màn hình LED',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Ảnh', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }]
+  });
+  return r.canceled ? [] : r.filePaths;
+});
+
+ipcMain.handle('club:command', (_e, c) => {
+  const actions = ['rain', 'dance', 'crowd', 'clear', 'next', 'prev', 'screen', 'camera', 'testLikes'];
+  if (!c || !actions.includes(c.action)) return false;
+  overlay.broadcast('club', { action: c.action, n: Number(c.n) || 0 });
+  return true;
+});
+
+ipcMain.handle('dialog:pickMusic', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Chọn nhạc cho DJ Club',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Âm thanh', extensions: ['mp3', 'wav', 'ogg', 'm4a'] }]
+  });
+  return r.canceled ? [] : r.filePaths;
 });
 
 ipcMain.handle('overlay:reload', () => {
@@ -279,6 +325,10 @@ function demoEvent(type) {
     case 'laugh': return { type: 'chat', user, text: 'cười', ts };
     case 'cry': return { type: 'chat', user, text: 'khóc', ts };
     case 'hug': return { type: 'chat', user, text: 'ôm', ts };
+    case 'dogSwap': return { type: 'chat', user, text: 'đổi', ts };
+    case 'gift100': return { type: 'gift', user, giftName: 'Quà 100 xu', diamonds: 100, repeatCount: 1, total: 100, giftImage: '', ts };
+    case 'gift1000': return { type: 'gift', user, giftName: 'Quà 1.000 xu', diamonds: 1000, repeatCount: 1, total: 1000, giftImage: '', ts };
+    case 'like': return { type: 'like', user, count: 15, ts };
     case 'gift': {
       const g = rand(DEMO_GIFTS);
       return { type: 'gift', user, ...g, total: g.diamonds * g.repeatCount, giftImage: '', ts };

@@ -190,7 +190,7 @@
   const ambientEl = new Audio();
   ambientEl.loop = true;
   function syncAmbientFile() {
-    const want = cfg.mode !== 'chua' && cfg.customAmbient && cfg.ambient && cfg.sound && !isPreview;
+    const want = cfg.mode !== 'chua' && cfg.mode !== 'club' && cfg.customAmbient && cfg.ambient && cfg.sound && !isPreview;
     if (want) {
       const src = '/media/ambient?v=' + encodeURIComponent(cfg.customAmbient);
       if (!ambientEl.src.endsWith(src)) ambientEl.src = src;
@@ -467,12 +467,14 @@
     document.body.classList.toggle('game', cfg.mode === 'game');
     document.body.classList.toggle('mode-chua', cfg.mode === 'chua');
     document.body.classList.toggle('mode-rap', cfg.mode === 'rap');
+    document.body.classList.toggle('mode-club', cfg.mode === 'club');
     // Bù màu: TikTok nén video làm màu nhạt và tối đi, tăng nhẹ độ tươi / tương phản / sáng
     const b = Math.max(0, Math.min(40, Number(cfg.liveBoost ?? 15))) / 100;
     stage.style.filter = b ? `saturate(${(1 + b).toFixed(3)}) contrast(${(1 + b * 0.3).toFixed(3)}) brightness(${(1 + b * 0.25).toFixed(3)})` : '';
     window.HauntGame.setConfig(cfg);
     window.TempleScene.setConfig(cfg);
     window.RapScene.setConfig(cfg);
+    window.ClubScene.setConfig(cfg);
     window.HauntAudio.update();
     syncAmbientFile();
     ensureFx();
@@ -522,6 +524,7 @@
     window.HauntGame.setPaused(p);
     window.TempleScene.setPaused(p);
     window.RapScene.setPaused(p);
+    window.ClubScene.setPaused(p);
     window.HauntAudio.setPaused(p);
     if (p) ambientEl.pause(); else syncAmbientFile();
     ensureFx();
@@ -576,12 +579,19 @@
     }
   });
 
+  // ---------- DJ Club ----------
+  window.ClubScene.init({
+    canvas: $('club'),
+    sfx: { play: (n, a) => window.HauntAudio.play(n, a), muted: () => !cfg.sound || isPreview },
+    ui: { root: $('club-ui') }
+  });
+
   // ---------- Kết nối tới app StudioLive ----------
   const socket = io({ reconnectionDelayMax: 3000 });
   socket.on('connect', () => $('offline').classList.add('hidden'));
   socket.on('disconnect', () => $('offline').classList.remove('hidden'));
   socket.on('config', applyConfig);
-  socket.on('stats', (st) => { updateStats(st); window.HauntGame.onStats(st); window.TempleScene.onStats(st); window.RapScene.onStats(st); });
+  socket.on('stats', (st) => { updateStats(st); window.HauntGame.onStats(st); window.TempleScene.onStats(st); window.RapScene.onStats(st); window.ClubScene.onStats(st); });
   socket.on('game', (a) => window.HauntGame.command(a));
   socket.on('reload', () => location.reload());
 
@@ -594,6 +604,8 @@
   socket.on('pause', (p) => setPausedAll(!!p));
   socket.on('chua', (c) => window.TempleScene.command(c));
   socket.on('rap', (c) => window.RapScene.command(c));
+  socket.on('club', (c) => window.ClubScene.command(c));
+  socket.on('clubRank', (p) => window.ClubScene.onRank(p));
 
   socket.on('live', (ev) => {
     if (!ev || !ev.type || paused) return; // đang tạm dừng: bỏ qua sự kiện
@@ -605,6 +617,11 @@
     if (cfg.mode === 'chua') {
       if (ev.type === 'chat' && blocked(ev.text)) return;
       window.TempleScene.onEvent(ev);
+      return;
+    }
+    if (cfg.mode === 'club') {
+      if (ev.type === 'chat' && blocked(ev.text)) return;
+      window.ClubScene.onEvent(ev);
       return;
     }
     const game = cfg.mode === 'game';

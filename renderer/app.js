@@ -24,7 +24,7 @@
   $$('.nav-item').forEach((b) => b.addEventListener('click', () => {
     $$('.nav-item').forEach((x) => x.classList.toggle('active', x === b));
     $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + b.dataset.view));
-    if (['ma', 'chua', 'rap'].includes(b.dataset.view)) switchScene(b.dataset.view);
+    if (['ma', 'chua', 'rap', 'club'].includes(b.dataset.view)) switchScene(b.dataset.view);
     setPreviewSrc(false);
   }));
 
@@ -223,7 +223,7 @@
     set('golive', live);
     set('connect', live);
     const sc = $('#qs-scene');
-    if (sc) sc.textContent = mode === 'chua' ? 'Đang chọn: 🪷 Đi Chùa Online' : mode === 'rap' ? 'Đang chọn: 🎬 Rạp Phim Online' : 'Đang chọn: 👻 Live Ma Online';
+    if (sc) sc.textContent = mode === 'chua' ? 'Đang chọn: 🪷 Đi Chùa Online' : mode === 'rap' ? 'Đang chọn: 🎬 Rạp Phim Online' : mode === 'club' ? 'Đang chọn: 🐶 DJ Club' : 'Đang chọn: 👻 Live Ma Online';
   }
   $$('[data-goto]').forEach((b) => b.addEventListener('click', () => $(`.nav-item[data-view=${b.dataset.goto}]`).click()));
   $('#qs-copy').addEventListener('click', async () => {
@@ -234,14 +234,14 @@
   // Chấm LIVE cạnh tab đang chạy trên live
   function renderChuaNav(mode) {
     renderQuick();
-    const live = mode === 'chua' ? 'chua' : mode === 'rap' ? 'rap' : 'ma';
+    const live = ['chua', 'rap', 'club'].includes(mode) ? mode : 'ma';
     $$('[data-live-for]').forEach((d) => d.classList.toggle('on', d.dataset.liveFor === live));
     $$('[data-open-scene]').forEach((b) => {
       const on = b.dataset.openScene === live;
       b.classList.toggle('live', on);
       b.querySelector('small').textContent = on
         ? '● Đang phát cảnh này — bấm để mở màn hình phát'
-        : ({ ma: 'Chuyển live sang Nhà Ma + mở màn hình phát', chua: 'Chuyển live sang chánh điện + mở màn hình phát', rap: 'Chuyển live sang rạp phim + mở màn hình phát' })[b.dataset.openScene];
+        : ({ ma: 'Chuyển live sang Nhà Ma + mở màn hình phát', chua: 'Chuyển live sang chánh điện + mở màn hình phát', rap: 'Chuyển live sang rạp phim + mở màn hình phát', club: 'Chuyển live sang sàn nhảy + mở màn hình phát' })[b.dataset.openScene];
     });
   }
   // Nút riêng cho từng cảnh: chuyển cảnh trên live rồi mở màn hình phát
@@ -253,12 +253,124 @@
   // Mở tab nào thì cảnh đó chạy trên live
   function switchScene(view) {
     if (!settings) return;
-    const want = view === 'chua' ? 'chua' : view === 'rap' ? 'rap' : 'game';
+    const want = ['chua', 'rap', 'club'].includes(view) ? view : 'game';
     if (settings.overlay.mode === want) return;
     settings.overlay.mode = want;
     renderSettings();
     save({ overlay: { mode: want } }, true);
-    notify(view === 'chua' ? '🪷 Live đang chạy: Đi Chùa Online' : view === 'rap' ? '🎬 Live đang chạy: Rạp Phim Online' : '👻 Live đang chạy: Live Ma Online');
+    notify(({ chua: '🪷 Live đang chạy: Đi Chùa Online', rap: '🎬 Live đang chạy: Rạp Phim Online', club: '🐶 Live đang chạy: DJ Club' })[view] || '👻 Live đang chạy: Live Ma Online');
+  }
+
+  // ---------- DJ Club ----------
+  const saveText = (inputSel, key, okMsg, emptyMsg) => {
+    const v = $(inputSel).value.trim();
+    settings.overlay[key] = v;
+    save({ overlay: { [key]: v } }, true);
+    notify(v ? okMsg : emptyMsg);
+  };
+  $$('#club-quality button').forEach((b) => b.addEventListener('click', () => {
+    settings.overlay.clubQuality = b.dataset.q;
+    updateLabels();
+    save({ overlay: { clubQuality: b.dataset.q } }, true);
+    notify(b.dataset.q === 'low' ? 'Chất lượng thấp: nhẹ máy hơn' : 'Chất lượng cao: phát sáng + phản chiếu sàn');
+  }));
+  $('#club-headline-save').addEventListener('click', () => saveText('#club-headline', 'clubHeadline', 'Đã lưu tiêu đề chạy', 'Đã xoá tiêu đề (dùng mặc định)'));
+  $('#club-desk-save').addEventListener('click', () => saveText('#club-desk', 'clubDeskText', 'Đã lưu chữ chạy trên bàn DJ', 'Đã xoá chữ bàn DJ (dùng lời chào mặc định)'));
+  function setClubImages(list) {
+    settings.overlay.clubScreenImages = list;
+    renderClubImages();
+    save({ overlay: { clubScreenImages: list } }, true);
+  }
+  $('#club-add-images').addEventListener('click', async () => {
+    const files = await api.pickImages();
+    if (!files.length) return;
+    setClubImages([...(settings.overlay.clubScreenImages || []), ...files].slice(0, 100));
+    notify(`Đã thêm ${files.length} ảnh`);
+  });
+  $('#club-clear-images').addEventListener('click', () => setClubImages([]));
+  function renderClubImages() {
+    const list = settings.overlay.clubScreenImages || [];
+    $('#club-screen-count').textContent = list.length ? `(${list.length} ảnh)` : '(chưa có — dùng ảnh mặc định)';
+    $('#club-screen-list').replaceChildren(...list.map((p, i) => {
+      const row = document.createElement('div');
+      row.className = 'club-track';
+      const name = document.createElement('span');
+      name.textContent = `${i + 1}. ${String(p).split(/[\\/]/).pop()}`;
+      name.title = p;
+      const del = document.createElement('button');
+      del.className = 'btn ghost sm';
+      del.textContent = '✕';
+      del.addEventListener('click', () => setClubImages(list.filter((_, j) => j !== i)));
+      row.append(name, del);
+      return row;
+    }));
+  }
+  $('#club-reset-score').addEventListener('click', async () => {
+    await api.clubResetScore();
+    notify('Đã đặt lại điểm DJ Club');
+  });
+  function renderClubRank(p) {
+    const box = $('#club-rank');
+    const top = (p && p.top) || [];
+    if (!top.length) {
+      box.replaceChildren(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'Chưa ai có điểm. Thả tim, tặng quà (hoặc bấm Gửi thử) để lên bảng.' }));
+      return;
+    }
+    const label = ['👑 DJ', '🥇 2', '🥈 3', '🥉 4'];
+    box.replaceChildren(...top.map((r, i) => {
+      const row = document.createElement('div');
+      row.className = 'club-rank-row' + (i < 4 ? ' podium' : '');
+      const rk = document.createElement('span');
+      rk.className = 'cr-rank';
+      rk.textContent = label[i] || String(i + 1);
+      const nm = document.createElement('span');
+      nm.className = 'cr-name';
+      nm.textContent = r.nickname;
+      const pt = document.createElement('span');
+      pt.className = 'cr-pts';
+      pt.textContent = fmt(r.points);
+      row.append(rk, nm, pt);
+      return row;
+    }));
+  }
+  $('#club-name-save').addEventListener('click', () => {
+    const name = $('#club-name').value.trim();
+    settings.overlay.clubName = name;
+    save({ overlay: { clubName: name } }, true);
+    notify(name ? `Đã lưu tên sàn nhảy: ${name}` : 'Đã xoá tên sàn nhảy (dùng tên mặc định)');
+  });
+  $$('[data-club]').forEach((b) => b.addEventListener('click', () => {
+    const a = b.dataset.club;
+    api.club(a, a === 'testLikes' ? { n: 100 } : a === 'crowd' ? { n: 10 } : {});
+  }));
+  function setClubTracks(list) {
+    settings.overlay.clubTracks = list;
+    renderClubTracks();
+    save({ overlay: { clubTracks: list } }, true);
+  }
+  $('#club-add-music').addEventListener('click', async () => {
+    const files = await api.pickMusic();
+    if (!files.length) return;
+    setClubTracks([...(settings.overlay.clubTracks || []), ...files].slice(0, 100));
+    notify(`Đã thêm ${files.length} bài`);
+  });
+  $('#club-clear-music').addEventListener('click', () => setClubTracks([]));
+  function renderClubTracks() {
+    const list = settings.overlay.clubTracks || [];
+    $('#club-track-count').textContent = list.length ? `(${list.length} bài)` : '(chưa có bài nào)';
+    $('#club-tracks').replaceChildren(...list.map((p, i) => {
+      const row = document.createElement('div');
+      row.className = 'club-track';
+      const name = document.createElement('span');
+      name.textContent = `${i + 1}. ${String(p).split(/[\\/]/).pop()}`;
+      name.title = p;
+      const del = document.createElement('button');
+      del.className = 'btn ghost sm';
+      del.textContent = '✕';
+      del.addEventListener('click', () => setClubTracks(list.filter((_, j) => j !== i)));
+      row.append(name, del);
+      return row;
+    }));
   }
   $('#chua-name-save').addEventListener('click', () => {
     const name = $('#chua-name').value.trim();
@@ -547,6 +659,18 @@
     if (document.activeElement !== $('#chua-name')) $('#chua-name').value = o.chuaName || '';
     $('#v-tutorialEvery').textContent = o.tutorialEvery ? o.tutorialEvery + ' phút' : 'Tắt';
     $('#v-ambientVolume').textContent = Math.round(o.ambientVolume * 100) + '%';
+    $('#v-clubMusicVolume').textContent = Math.round(o.clubMusicVolume * 100) + '%';
+    $('#v-clubMaxDogs').textContent = o.clubMaxDogs;
+    $('#v-clubCameraSec').textContent = o.clubCameraSec + ' giây';
+    $('#v-clubBpm').textContent = o.clubBpm + ' nhịp/phút';
+    $('#v-clubCamEvery').textContent = o.clubCamEvery + ' giây';
+    $$('#club-quality button').forEach((b) => b.classList.toggle('active', b.dataset.q === (o.clubQuality || 'high')));
+    $('#v-clubScreenSec').textContent = o.clubScreenSec + ' giây';
+    if (document.activeElement !== $('#club-headline')) $('#club-headline').value = o.clubHeadline || '';
+    if (document.activeElement !== $('#club-desk')) $('#club-desk').value = o.clubDeskText || '';
+    renderClubImages();
+    if (document.activeElement !== $('#club-name')) $('#club-name').value = o.clubName || '';
+    renderClubTracks();
   }
 
   $$('[data-o]').forEach((el) => {
@@ -626,5 +750,7 @@
     renderStatus({ status: init.live.status, username: init.live.username });
     renderPause(init.paused);
     renderStats({ ...init.live.stats, topGifters: init.live.topGifters });
+    renderClubRank(init.clubRank);
   });
+  api.onClubRank(renderClubRank);
 })();

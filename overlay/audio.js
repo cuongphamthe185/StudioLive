@@ -592,7 +592,7 @@
   function syncAmbient() {
     const c = getCfg();
     let key;
-    if (c.mode === 'chua' || c.mode === 'rap') key = 'none'; // chùa: nhạc mp3 riêng; rạp: tiếng của phim
+    if (c.mode === 'chua' || c.mode === 'rap' || c.mode === 'club') key = 'none'; // chùa, club: nhạc mp3 riêng; rạp: tiếng của phim
     else key = !c.sound || muted || !c.ambient || c.customAmbient ? 'none' : (AMBIENTS[c.ambientPreset] ? c.ambientPreset : 'drone');
     if ((amb?.key || 'none') === key) return;
     stopAmbient();

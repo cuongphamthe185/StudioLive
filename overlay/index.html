@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>StudioLive Overlay</title>
   <link rel="stylesheet" href="overlay.css">
+  <link rel="stylesheet" href="club.css">
+  <script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }</script>
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
@@ -14,6 +16,8 @@
     <canvas id="game"></canvas>
     <canvas id="temple"></canvas>
     <canvas id="rap"></canvas>
+    <canvas id="club"></canvas>
+    <div id="club-ui"></div>
 
     <div id="rap-ui">
       <div class="r-head"><span class="r-title"></span><span class="r-now"></span></div>
@@ -116,6 +120,8 @@
   <script src="game.js"></script>
   <script src="temple.js"></script>
   <script src="rap.js"></script>
+  <script src="club/scene.js"></script>
+  <script type="module" src="club/club3d.js"></script>
   <script src="overlay.js"></script>
 </body>
 </html>

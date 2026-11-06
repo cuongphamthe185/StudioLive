@@ -37,6 +37,29 @@ const DEFAULTS = {
     chuaLikeGoal: 666,          // số tim để mưa hoa sen
     chuaMusic: true,            // nhạc nền thiền (mp3)
     chuaMusicVolume: 0.45,
+    clubName: '',               // tên sàn nhảy (tiêu đề)
+    clubMusic: true,            // phát nhạc nền từ danh sách clubTracks
+    clubMusicVolume: 0.6,
+    clubTracks: [],             // đường dẫn file nhạc trên máy
+    clubLikeGoal: 300,          // số tim để mưa pháo giấy
+    clubMaxDogs: 40,            // số chó tối đa trên sàn
+    clubCamera: true,           // tặng quà -> camera lia và áp sát nhân vật của người tặng
+    clubCameraSec: 3,           // số giây camera giữ ở người tặng
+    clubHeadline: '',           // tiêu đề chữ chạy phía trên (trống = tên sàn + hướng dẫn)
+    clubDeskText: '',           // chữ chạy trên bàn DJ (trống = lời chào)
+    clubScreenImages: [],       // ảnh trên máy cho màn hình LED
+    clubScreenSec: 8,           // số giây mỗi ảnh trên màn LED
+    clubBpm: 124,               // nhịp đèn nháy (nhịp/phút)
+    clubQuality: 'high',        // high: bloom + phản chiếu sàn; low: nhẹ cho máy yếu
+    clubCamAuto: true,          // camera tự đổi góc máy
+    clubCamEvery: 12,           // số giây mỗi góc máy
+    clubPtsLike: 1,             // điểm mỗi tim
+    clubLikeCapMin: 60,         // số tim tối đa được tính mỗi phút cho mỗi người (0 = không giới hạn)
+    clubPtsCoin: 100,           // điểm mỗi xu của quà
+    clubGiftBonus: true,        // thưởng thêm cho quà đắt: 10–99 xu ×1,1; 100–999 ×1,25; từ 1.000 ×1,5
+    clubPtsFollow: 50,          // điểm theo dõi (1 lần mỗi phiên)
+    clubPtsShare: 20,           // điểm mỗi lần chia sẻ
+    clubShareMax: 5,            // số lần chia sẻ được tính mỗi phiên
     roundEvery: 3,              // phút giữa các vòng TRỐN TÌM, 0 = tắt
     bots: true,                 // ma NPC đi hù người xem
     background: 'haunted',      // transparent | haunted
@@ -105,7 +128,30 @@ class Settings {
     o.ambientVolume = Math.min(1, Math.max(0, o.ambientVolume));
     o.liveBoost = Math.min(40, Math.max(0, Math.round(o.liveBoost)));
     if (!['drone', 'wind', 'rain', 'church', 'heartbeat', 'musicbox', 'whispers', 'forest'].includes(o.ambientPreset)) o.ambientPreset = 'drone';
-    if (!['game', 'cards', 'chua', 'rap'].includes(o.mode)) o.mode = 'game';
+    if (!['game', 'cards', 'chua', 'rap', 'club'].includes(o.mode)) o.mode = 'game';
+    o.clubName = String(o.clubName).replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 40);
+    o.clubMusicVolume = Math.min(1, Math.max(0, o.clubMusicVolume));
+    o.clubLikeGoal = Math.min(100000, Math.max(10, Math.round(o.clubLikeGoal)));
+    o.clubMaxDogs = Math.min(120, Math.max(5, Math.round(o.clubMaxDogs)));
+    o.clubCameraSec = Math.min(10, Math.max(1, Math.round(o.clubCameraSec)));
+    const text = (s, n) => String(s).replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, n);
+    const int = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d);
+    o.clubHeadline = text(o.clubHeadline, 200);
+    o.clubDeskText = text(o.clubDeskText, 200);
+    o.clubScreenImages = (Array.isArray(o.clubScreenImages) ? o.clubScreenImages : [])
+      .filter((x) => typeof x === 'string' && /\.(png|jpe?g|gif|webp)$/i.test(x)).map((x) => x.trim().slice(0, 2000)).slice(0, 100);
+    o.clubScreenSec = int(o.clubScreenSec, 3, 60, 8);
+    o.clubBpm = int(o.clubBpm, 60, 180, 124);
+    if (!['high', 'low'].includes(o.clubQuality)) o.clubQuality = 'high';
+    o.clubCamEvery = int(o.clubCamEvery, 4, 120, 12);
+    o.clubPtsLike = int(o.clubPtsLike, 0, 100000, 1);
+    o.clubLikeCapMin = int(o.clubLikeCapMin, 0, 100000, 60);
+    o.clubPtsCoin = int(o.clubPtsCoin, 1, 100000, 100);
+    o.clubPtsFollow = int(o.clubPtsFollow, 0, 100000, 50);
+    o.clubPtsShare = int(o.clubPtsShare, 0, 100000, 20);
+    o.clubShareMax = int(o.clubShareMax, 0, 1000, 5);
+    o.clubTracks = (Array.isArray(o.clubTracks) ? o.clubTracks : [])
+      .filter((x) => typeof x === 'string' && /\.(mp3|wav|ogg|m4a)$/i.test(x)).map((x) => x.trim().slice(0, 2000)).slice(0, 100);
     o.rapName = String(o.rapName).replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 40);
     o.rapRate = Math.min(1.3, Math.max(0.6, o.rapRate));
     if (!['classic', 'gold', 'imax', 'home'].includes(o.rapTheme)) o.rapTheme = 'classic';

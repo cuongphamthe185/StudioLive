@@ -12,11 +12,12 @@
   "author": "Tanthuan031 (https://github.com/tanthuan031)",
   "license": "MIT",
   "dependencies": {
+    "@openapitools/openapi-generator-cli": "file:stubs/openapi-generator-cli",
     "express": "^4.21.2",
     "msedge-tts": "^2.1.0",
     "socket.io": "^4.8.1",
-    "tiktok-live-connector": "2.0.0",
-    "@openapitools/openapi-generator-cli": "file:stubs/openapi-generator-cli"
+    "three": "^0.187.0",
+    "tiktok-live-connector": "2.0.0"
   },
   "devDependencies": {
     "electron": "45.2.1",

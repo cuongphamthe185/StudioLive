@@ -47,6 +47,8 @@ class OverlayServer {
     });
 
     app.use(express.static(path.join(__dirname, '..', 'overlay'), { index: 'index.html' }));
+    // Thư viện Three.js cho cảnh DJ Club 3D (đóng gói kèm app, không tải từ mạng)
+    app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three')));
 
     // Âm thanh tuỳ chỉnh người dùng chọn trên máy
     app.get('/media/:kind', (req, res) => {
@@ -70,6 +72,24 @@ class OverlayServer {
       res.sendFile(file, { headers: { 'Content-Type': type, 'Cache-Control': 'no-store' } });
     });
 
+    // Nhạc cho cảnh DJ Club (file trên máy người dùng chọn)
+    app.get('/club/:i', (req, res) => {
+      const list = this.getConfig().overlay.clubTracks || [];
+      const file = list[Number(req.params.i)] || '';
+      const type = MEDIA_TYPES[path.extname(file).toLowerCase()];
+      if (!file || !type || !type.startsWith('audio/') || !fs.existsSync(file)) return res.sendStatus(404);
+      res.sendFile(file, { headers: { 'Content-Type': type, 'Cache-Control': 'no-store' } });
+    });
+
+    // Ảnh cho màn hình LED của DJ Club (file trên máy người dùng chọn)
+    app.get('/club-screen/:i', (req, res) => {
+      const list = this.getConfig().overlay.clubScreenImages || [];
+      const file = list[Number(req.params.i)] || '';
+      const type = MEDIA_TYPES[path.extname(file).toLowerCase()];
+      if (!file || !type || !type.startsWith('image/') || !fs.existsSync(file)) return res.sendStatus(404);
+      res.sendFile(file, { headers: { 'Content-Type': type, 'Cache-Control': 'no-store' } });
+    });
+
     app.get('/health', (_req, res) => res.json({ ok: true }));
 
     const server = http.createServer(app);
@@ -78,6 +98,7 @@ class OverlayServer {
       socket.emit('config', this.getConfig().overlay);
       socket.emit('stats', this.getSnapshot().stats);
       socket.emit('pause', this.getPaused());
+      if (this.onConnection) this.onConnection(socket);
       this.emitClients();
       socket.on('disconnect', () => this.emitClients());
     });

@@ -1,7 +1,7 @@
 {
   "name": "studio-live",
   "productName": "StudioLive",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "StudioLive — cảnh tương tác cho TikTok LIVE: Live Ma Online, Đi Chùa Online, Rạp Phim Online & Live GPLX",
   "main": "src/main.js",
   "engines": {

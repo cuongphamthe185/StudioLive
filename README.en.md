@@ -23,9 +23,11 @@ A desktop app that creates **interactive scenes for TikTok LIVE**, running entir
 
 Whichever tab is open is the scene shown on the live stream.
 
-| 👻 Live Ma Online | 🪷 Đi Chùa Online | 🎬 Rạp Phim Online |
-|---|---|---|
-| ![Live Ma Online](docs/screenshots/live-ma-online.png) | ![Đi Chùa Online](docs/screenshots/di-chua-online.png) | ![Rạp Phim Online](docs/screenshots/rap-phim-online.png) |
+| 👻 Live Ma Online | 🪷 Đi Chùa Online |
+|---|---|
+| ![Live Ma Online](docs/screenshots/live-ma-online.png) | ![Đi Chùa Online](docs/screenshots/di-chua-online.png) |
+| **🎬 Rạp Phim Online** | **🚦 Ôn thi GPLX (Driving-licence quiz)** |
+| ![Rạp Phim Online](docs/screenshots/rap-phim-online.png) | ![Ôn thi GPLX](docs/screenshots/on-thi-gplx.png) |
 
 ## Download & install (users)
 

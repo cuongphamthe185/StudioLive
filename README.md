@@ -21,9 +21,11 @@ App máy tính tạo **cảnh tương tác cho TikTok LIVE**, chạy hoàn toàn
 
 Mở tab nào thì cảnh đó chạy trên live.
 
-| 👻 Live Ma Online | 🪷 Đi Chùa Online | 🎬 Rạp Phim Online |
-|---|---|---|
-| ![Live Ma Online](docs/screenshots/live-ma-online.png) | ![Đi Chùa Online](docs/screenshots/di-chua-online.png) | ![Rạp Phim Online](docs/screenshots/rap-phim-online.png) |
+| 👻 Live Ma Online | 🪷 Đi Chùa Online |
+|---|---|
+| ![Live Ma Online](docs/screenshots/live-ma-online.png) | ![Đi Chùa Online](docs/screenshots/di-chua-online.png) |
+| **🎬 Rạp Phim Online** | **🚦 Ôn thi GPLX** |
+| ![Rạp Phim Online](docs/screenshots/rap-phim-online.png) | ![Ôn thi GPLX](docs/screenshots/on-thi-gplx.png) |
 
 ## Tải & cài đặt (người dùng)
 

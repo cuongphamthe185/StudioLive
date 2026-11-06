@@ -71,7 +71,8 @@
     bgCanvas.width = W;
     bgCanvas.height = H;
     paintBackground();
-    requestAnimationFrame(loop);
+    started = true;
+    kick();
     setInterval(tick1s, 1000);
   }
 
@@ -86,6 +87,7 @@
     if (enabled && !was) scheduleRound();
     if (!cfg.roundEvery) round.next = 0;
     else if (!round.next) scheduleRound();
+    kick();
   }
 
   function scheduleRound() {
@@ -573,14 +575,22 @@
   // ---------------- Vòng lặp ----------------
   // Giới hạn 30 khung hình/giây: TikTok cũng chỉ phát ~30 fps, màn hình 120Hz không làm tốn gấp 4 lần
   const FRAME_MS = 1000 / 30;
+  // Cảnh không được chọn thì dừng hẳn vòng vẽ (không tốn CPU/GPU); kick() chạy lại khi cần
+  let rafId = 0;
+  let started = false;
+  function kick() {
+    if (!started || rafId || pauseAt || !enabled) return;
+    last = clock();
+    rafId = requestAnimationFrame(loop);
+  }
   function loop(rt) {
-    if (pauseAt) return; // tạm dừng: không vẽ, không tốn CPU
-    requestAnimationFrame(loop);
+    rafId = 0;
+    if (pauseAt || !enabled) return;
+    rafId = requestAnimationFrame(loop);
     const t = rt - pausedMs;
     if (t - last < FRAME_MS - 2) return;
     const dt = Math.min(0.05, (t - last) / 1000);
     last = t;
-    if (!enabled) return;
     update(dt, t);
     draw(t);
   }
@@ -591,8 +601,7 @@
     } else if (!p && pauseAt) {
       pausedMs += performance.now() - pauseAt;
       pauseAt = 0;
-      last = clock();
-      requestAnimationFrame(loop);
+      kick();
     }
   }
 

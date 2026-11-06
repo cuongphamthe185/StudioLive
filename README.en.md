@@ -19,12 +19,15 @@ A desktop app that creates **interactive scenes for TikTok LIVE**, running entir
 - **👻 Live Ma Online (Haunted House)** — viewers turn into ghosts and type `hù` (boo) / `trốn` (hide) / `tìm` (seek) / `bùa` (talisman) / `gọi hồn` (summon) / `tắt đèn` (lights out)… to play with each other; big gifts summon the Granny Ghost + a jumpscare; periodic HIDE-AND-SEEK rounds.
 - **🪷 Đi Chùa Online (Temple Visit)** — a temple main hall; viewers sit on meditation cushions and type `adidaphat` to come up and light incense; gifts make golden lotuses bloom, with a voice thanking and blessing them; reaching the like goal triggers a lotus-petal shower.
 - **🎬 Rạp Phim Online (Movie Theater)** — a cinema room; viewers are greeted and walk to their seats; the screen plays a playlist (YouTube links, .mp4/.webm links, or local files); commands `vỗ tay` (clap) / `haha` / `wow` / `bắp` (popcorn); gifts = VIP seats; enough likes = popcorn rain. 4 room styles: Classic, VIP Gold, IMAX, Family.
+- **🚦 Ôn thi GPLX (Driving-licence quiz)** — a live multiple-choice quiz for the Vietnamese driving licence exam: pick a licence class, shuffle the built-in 600-question bank (with sign/road images), set seconds per question; when time is up the answer and results are shown, then the next question starts. Create/edit questions and classes in the app; data is stored locally in SQLite. Viewers comment A/B/C/D to answer, with voice reading the question and answer.
 
 Whichever tab is open is the scene shown on the live stream.
 
-| 👻 Live Ma Online | 🪷 Đi Chùa Online | 🎬 Rạp Phim Online |
-|---|---|---|
-| ![Live Ma Online](docs/screenshots/live-ma-online.png) | ![Đi Chùa Online](docs/screenshots/di-chua-online.png) | ![Rạp Phim Online](docs/screenshots/rap-phim-online.png) |
+| 👻 Live Ma Online | 🪷 Đi Chùa Online |
+|---|---|
+| ![Live Ma Online](docs/screenshots/live-ma-online.png) | ![Đi Chùa Online](docs/screenshots/di-chua-online.png) |
+| **🎬 Rạp Phim Online** | **🚦 Ôn thi GPLX (Driving-licence quiz)** |
+| ![Rạp Phim Online](docs/screenshots/rap-phim-online.png) | ![Ôn thi GPLX](docs/screenshots/on-thi-gplx.png) |
 
 ## Download & install (users)
 
@@ -57,7 +60,7 @@ Not sure which Mac chip you have? Click  → **About This Mac** — “Chip: App
 
 ### Going live for the first time
 
-1. **Pick a scene**: click the 👻 Ma / 🪷 Chùa / 🎬 Rạp tab in the left menu.
+1. **Pick a scene**: click the 👻 Ma / 🪷 Chùa / 🎬 Rạp / 🚦 GPLX tab in the left menu.
 2. **Add it to TikTok LIVE Studio**: use a **portrait** layout, add a **Link** source `http://lvh.me:3000`, size **1080 × 1920**, stretched to fill the frame. (LIVE Studio rejects `localhost`; `lvh.me` always points back to your own machine.)
 3. Click **Go LIVE** in TikTok LIVE Studio.
 4. **Connect**: on the Dashboard, enter your TikTok username (no @) → **Kết nối** (Connect).
@@ -66,14 +69,20 @@ You can try everything before going live with the **Gửi thử** (Send test) bu
 
 ## Run from source (developers)
 
-Requires **Node.js 18+** and **git**.
+Requires **Node.js 20.19+ (22 LTS recommended)** and **git**.
 
 ```bash
 git clone https://github.com/tanthuan031/StudioLive.git
 cd StudioLive
 npm install
-npm start
+npm start          # development mode (Vite + Electron)
 ```
+
+| Command | What it does |
+|---|---|
+| `npm start` / `npm run dev` | Runs Vite + Electron. UI changes (`renderer/`) hot-reload; changes to `src/*.js` restart Electron automatically. **Ctrl+C** to stop (press twice to force quit). |
+| `npm run start:prod` | Builds the UI into `renderer/dist`, then runs it like the installed app. |
+| `npm run build:renderer` | Builds the UI only. |
 
 Build installers (unsigned):
 
@@ -93,13 +102,18 @@ src/direct.js     Reads events via a hidden browser + protobuf decoding (tiktok-
 src/server.js     Express + Socket.IO overlay server (127.0.0.1 only) + /api/tts voice endpoint
 src/tts.js        Vietnamese text-to-speech (Microsoft Edge, Google fallback)
 src/settings.js   Settings stored in the userData folder
-renderer/         Control panel UI
-overlay/          Pages shown on the live stream: game.js (Haunted House), temple.js (Temple), rap.js (Theater), faces.js, audio.js
+src/quiz-store.js GPLX question bank (SQLite via node:sqlite)
+scripts/dev.js    Dev runner: Vite + Electron, auto-restart, clean shutdown on Ctrl+C
+renderer/         Control panel UI (Vue 3, built by Vite into renderer/dist before running/packaging)
+overlay/          Pages shown on the live stream: game.js (Haunted House), temple.js (Temple), rap.js (Theater), quiz.js (GPLX), faces.js, audio.js
 overlay/chua-assets/  Images, characters, effects and music for the Temple scene
+data/             600-question GPLX bank (quiz-600-meothilaixe.json) + question images (quiz-images/*.webp)
 build/icon.png    App icon
 ```
 
-User settings are stored at `~/Library/Application Support/StudioLive/settings.json` (macOS) and `%APPDATA%\StudioLive\settings.json` (Windows).
+Only the selected scene runs its render loop; the others stop completely to keep the app light. Prefer **WebP** for new images in `data/` or `overlay/` (see [docs/BUILD.md](docs/BUILD.md)).
+
+User settings are stored at `~/Library/Application Support/StudioLive/settings.json` (macOS) and `%APPDATA%\StudioLive\settings.json` (Windows). The question bank is stored in `quiz.sqlite` in the same app-data folder.
 
 > Note: keep `tiktok-live-connector` pinned at **2.0.0** (MIT). Newer versions are licensed under AGPL-3.0.
 

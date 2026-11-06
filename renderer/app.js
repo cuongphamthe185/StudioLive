@@ -10,24 +10,59 @@
   let status = 'idle';
   let startedAt = 0;
   let feedFilter = 'all';
+  let quizSessionRunning = false;
+  window.addEventListener('app:quiz-session-state', (event) => {
+    quizSessionRunning = !!event.detail?.running;
+  });
 
   // ---------- Toast nhỏ trong app ----------
   function notify(text, kind = 'ok') {
+    const host = $('#toast-host');
+    const content = String(text);
+    const duplicate = [...host.querySelectorAll('.app-toast')].find((toast) => toast.dataset.message === content && toast.classList.contains(kind));
+    if (duplicate) return;
     const t = document.createElement('div');
     t.className = 'app-toast ' + kind;
-    t.textContent = text;
-    $('#toast-host').appendChild(t);
+    t.dataset.message = content;
+    t.textContent = content;
+    host.appendChild(t);
     setTimeout(() => t.remove(), 3000);
   }
+  const notificationHandler = (event) => {
+    const detail = event.detail || {};
+    if (detail.text) notify(detail.text, detail.error ? 'err' : 'ok');
+  };
+  if (window.__studioNotifyHandler) window.removeEventListener('app:notify', window.__studioNotifyHandler);
+  window.__studioNotifyHandler = notificationHandler;
+  window.addEventListener('app:notify', notificationHandler);
 
   // ---------- Điều hướng ----------
-  $$('.nav-item').forEach((b) => b.addEventListener('click', () => {
+  $$('.nav-item').forEach((b) => b.addEventListener('click', async () => {
+    if (['ma', 'chua', 'rap', 'quiz'].includes(b.dataset.view)) {
+      const nextMode = b.dataset.view === 'ma' ? 'game' : b.dataset.view;
+      const currentMode = settings?.overlay?.mode;
+      const liveInProgress = outputOpen || (currentMode === 'quiz' && quizSessionRunning);
+      if (liveInProgress && currentMode !== nextMode && !window.confirm('Bạn có muốn dừng live hiện tại để chuyển sang cảnh mới không?')) {
+        notify('Đã giữ nguyên cảnh live đang phát.');
+        return;
+      }
+      if (liveInProgress && currentMode !== nextMode) {
+        if (currentMode === 'quiz') {
+          const result = await api.quiz('pause');
+          if (result === false) {
+            notify('Không thể dừng phiên GPLX. Live vẫn đang chạy.', 'err');
+            return;
+          }
+          window.dispatchEvent(new Event('app:quiz-session-paused'));
+          quizSessionRunning = false;
+        }
+      }
+      switchScene(b.dataset.view);
+    }
     $$('.nav-item').forEach((x) => x.classList.toggle('active', x === b));
     $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + b.dataset.view));
-    if (['ma', 'chua', 'rap'].includes(b.dataset.view)) switchScene(b.dataset.view);
     setPreviewSrc(false);
   }));
-
   // Cột cài đặt của tab cảnh: bọc thêm 1 lớp để chia 2 cột bên trong và cuộn dọc
   $$('.feature-controls').forEach((fc) => {
     const inner = document.createElement('div');
@@ -223,7 +258,7 @@
     set('golive', live);
     set('connect', live);
     const sc = $('#qs-scene');
-    if (sc) sc.textContent = mode === 'chua' ? 'Đang chọn: 🪷 Đi Chùa Online' : mode === 'rap' ? 'Đang chọn: 🎬 Rạp Phim Online' : 'Đang chọn: 👻 Live Ma Online';
+    if (sc) sc.textContent = mode === 'chua' ? 'Đang chọn: 🪷 Đi Chùa Online' : mode === 'rap' ? 'Đang chọn: 🎬 Rạp Phim Online' : mode === 'quiz' ? 'Đang chọn: 🚦 Ôn thi GPLX' : 'Đang chọn: 👻 Live Ma Online';
   }
   $$('[data-goto]').forEach((b) => b.addEventListener('click', () => $(`.nav-item[data-view=${b.dataset.goto}]`).click()));
   $('#qs-copy').addEventListener('click', async () => {
@@ -234,37 +269,40 @@
   // Chấm LIVE cạnh tab đang chạy trên live
   function renderChuaNav(mode) {
     renderQuick();
-    const live = mode === 'chua' ? 'chua' : mode === 'rap' ? 'rap' : 'ma';
+    const live = ['chua', 'rap', 'quiz'].includes(mode) ? mode : 'ma';
     $$('[data-live-for]').forEach((d) => d.classList.toggle('on', d.dataset.liveFor === live));
     $$('[data-open-scene]').forEach((b) => {
       const on = b.dataset.openScene === live;
       b.classList.toggle('live', on);
-      b.querySelector('small').textContent = on
+      const helper = b.querySelector('small');
+      if (helper) helper.textContent = on
         ? '● Đang phát cảnh này — bấm để mở màn hình phát'
-        : ({ ma: 'Chuyển live sang Nhà Ma + mở màn hình phát', chua: 'Chuyển live sang chánh điện + mở màn hình phát', rap: 'Chuyển live sang rạp phim + mở màn hình phát' })[b.dataset.openScene];
+        : ({ ma: 'Chuyển live sang Nhà Ma + mở màn hình phát', chua: 'Chuyển live sang chánh điện + mở màn hình phát', rap: 'Chuyển live sang rạp phim + mở màn hình phát', quiz: 'Chuyển live sang câu hỏi GPLX + mở màn hình phát' })[b.dataset.openScene];
     });
   }
   // Nút riêng cho từng cảnh: chuyển cảnh trên live rồi mở màn hình phát
   $$('[data-open-scene]').forEach((b) => b.addEventListener('click', () => {
     switchScene(b.dataset.openScene);
+    if (b.dataset.openScene === 'quiz') $('.quiz-tab[data-quiz-tab="live"]')?.click();
     api.openOutput();
   }));
 
   // Mở tab nào thì cảnh đó chạy trên live
   function switchScene(view) {
     if (!settings) return;
-    const want = view === 'chua' ? 'chua' : view === 'rap' ? 'rap' : 'game';
+    const want = ['chua', 'rap', 'quiz'].includes(view) ? view : 'game';
     if (settings.overlay.mode === want) return;
     settings.overlay.mode = want;
     renderSettings();
     save({ overlay: { mode: want } }, true);
-    notify(view === 'chua' ? '🪷 Live đang chạy: Đi Chùa Online' : view === 'rap' ? '🎬 Live đang chạy: Rạp Phim Online' : '👻 Live đang chạy: Live Ma Online');
+    notify(view === 'chua' ? '🪷 Live đang chạy: Đi Chùa Online' : view === 'rap' ? '🎬 Live đang chạy: Rạp Phim Online' : view === 'quiz' ? '🚦 Live đang chạy: Ôn thi GPLX' : '👻 Live đang chạy: Live Ma Online');
   }
   $('#chua-name-save').addEventListener('click', () => {
     const name = $('#chua-name').value.trim();
     settings.overlay.chuaName = name;
-    save({ overlay: { chuaName: name } }, true);
-    notify(name ? `Đã lưu tên kênh: ${name}` : 'Đã xoá tên kênh (dùng tên mặc định)');
+    save({ overlay: { chuaName: name } }, true).then((ok) => {
+      if (ok) notify(name ? `Đã lưu tên kênh: ${name}` : 'Đã xoá tên kênh (dùng tên mặc định)');
+    });
   });
   $('#chua-speak-btn').addEventListener('click', () => {
     const text = $('#chua-speak').value.trim();
@@ -297,6 +335,7 @@
       const del = document.createElement('button'); del.className = 'mv-del'; del.textContent = '✕'; del.title = 'Xoá khỏi danh sách';
       del.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (!window.confirm(`Xoá “${movieName(p)}” khỏi danh sách phim?`)) return;
         const next = list.filter((_, k) => k !== i);
         const idx = Math.min(cur > i ? cur - 1 : cur, Math.max(0, next.length - 1));
         settings.overlay.rapVideos = next; settings.overlay.rapIndex = idx;
@@ -365,8 +404,9 @@
   $('#rap-name-save').addEventListener('click', () => {
     const name = $('#rap-name').value.trim();
     settings.overlay.rapName = name;
-    save({ overlay: { rapName: name } }, true);
-    notify(name ? `Đã lưu tên rạp: ${name}` : 'Đã xoá tên rạp (dùng tên mặc định)');
+    save({ overlay: { rapName: name } }, true).then((ok) => {
+      if (ok) notify(name ? `Đã lưu tên rạp: ${name}` : 'Đã xoá tên rạp (dùng tên mặc định)');
+    });
   });
   $('#rap-speak-btn').addEventListener('click', () => {
     const text = $('#rap-speak').value.trim();
@@ -390,13 +430,142 @@
 
   // ---------- Màn hình phát live ----------
   let outputOpen = false;
-  $$('[data-open-output]').forEach((b) => b.addEventListener('click', () => api.openOutput()));
-  api.onOutput(({ open }) => {
-    outputOpen = open;
+  let outputRecorder = null;
+  let recordingStream = null;
+  let canvasStream = null;
+  let recordingVideo = null;
+  let recordingChunks = [];
+  let recordingStartedAt = 0;
+  let recordingClock = 0;
+  let renderFrame = 0;
+  const recordButtons = $$('[data-record-output]');
+  function setOutputOpen(open) {
+    outputOpen = !!open;
+    updateRecordButtons();
     $$('[data-open-output]').forEach((b) => {
-      b.classList.toggle('open', open);
-      b.textContent = open ? '📺 Màn hình phát đang mở' : '📺 Mở màn hình phát live';
+      b.classList.toggle('open', outputOpen);
+      b.textContent = outputOpen ? '📺 Màn hình phát đang mở' : '📺 Mở màn hình phát live';
     });
+  }
+  const recordLabel = () => {
+    const seconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
+    return `⏹ Dừng & tải ${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  };
+  function updateRecordButtons() {
+    recordButtons.forEach((button) => {
+      const recording = outputRecorder?.state === 'recording';
+      button.disabled = !recording && button.dataset.busy === 'true';
+      button.textContent = recording ? recordLabel() : '⏺ Quay video';
+      button.title = recording ? 'Dừng quay và tải video xuống' : 'Quay nội dung trong khung live đang xem';
+      button.classList.toggle('danger', recording);
+      button.classList.toggle('primary', !recording);
+    });
+  }
+  function stopRecording() {
+    if (!outputRecorder || outputRecorder.state !== 'recording') return;
+    clearInterval(recordingClock);
+    recordButtons.forEach((button) => { button.dataset.busy = 'true'; button.disabled = true; button.textContent = 'Đang hoàn tất video…'; });
+    outputRecorder.stop();
+  }
+  function drawPreview(canvas, context, targetFrame) {
+    if (!recordingVideo?.videoWidth) {
+      renderFrame = requestAnimationFrame(() => drawPreview(canvas, context, targetFrame));
+      return;
+    }
+    const rect = targetFrame.getBoundingClientRect();
+    const scale = recordingVideo.videoWidth / window.innerWidth;
+    const topFrame = Math.max(0, recordingVideo.videoHeight - window.innerHeight * scale);
+    context.drawImage(recordingVideo, rect.left * scale, topFrame + rect.top * scale,
+      rect.width * scale, rect.height * scale, 0, 0, canvas.width, canvas.height);
+    renderFrame = requestAnimationFrame(() => drawPreview(canvas, context, targetFrame));
+  }
+  async function startRecording(button) {
+    const targetFrame = button.closest('.preview-wrap')?.querySelector('iframe.live-preview');
+    if (!targetFrame || !targetFrame.dataset.src) {
+      return notify('Khung live chưa tải xong. Chờ hình xuất hiện rồi bấm quay.', 'err');
+    }
+    recordButtons.forEach((button) => { button.dataset.busy = 'true'; button.textContent = 'Đang bắt đầu quay…'; });
+    try {
+      const sourceId = await api.captureSourceId();
+      const tabVideo = { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: sourceId } };
+      try {
+        const tabAudio = { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: sourceId } };
+        recordingStream = await navigator.mediaDevices.getUserMedia({ video: tabVideo, audio: tabAudio });
+      } catch {
+        recordingStream = await navigator.mediaDevices.getUserMedia({ video: tabVideo, audio: false });
+      }
+      recordingVideo = document.createElement('video');
+      recordingVideo.muted = true;
+      recordingVideo.playsInline = true;
+      recordingVideo.srcObject = recordingStream;
+      await recordingVideo.play();
+      const canvas = document.createElement('canvas');
+      canvas.width = 1080;
+      canvas.height = 1920;
+      const context = canvas.getContext('2d', { alpha: false });
+      if (!context) throw new Error('Không tạo được khung hình video.');
+      canvasStream = canvas.captureStream(30);
+      recordingStream.getAudioTracks().forEach((track) => canvasStream.addTrack(track));
+      const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+        .find((type) => MediaRecorder.isTypeSupported(type));
+      outputRecorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
+      recordingChunks = [];
+      outputRecorder.addEventListener('dataavailable', (event) => { if (event.data?.size) recordingChunks.push(event.data); });
+      outputRecorder.addEventListener('stop', () => {
+        const blob = new Blob(recordingChunks, { type: outputRecorder?.mimeType || 'video/webm' });
+        cancelAnimationFrame(renderFrame);
+        recordingStream?.getTracks().forEach((track) => track.stop());
+        canvasStream?.getTracks().forEach((track) => track.stop());
+        recordingVideo?.pause();
+        if (recordingVideo) recordingVideo.srcObject = null;
+        recordingStream = null;
+        canvasStream = null;
+        recordingVideo = null;
+        outputRecorder = null;
+        recordingChunks = [];
+        clearInterval(recordingClock);
+        recordButtons.forEach((button) => { delete button.dataset.busy; });
+        updateRecordButtons();
+        if (!blob.size) return notify('Không tạo được video. Hãy thử quay lại.', 'err');
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `StudioLive-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        notify(`Đã lưu video ${(blob.size / 1024 / 1024).toFixed(1)} MB vào thư mục tải xuống.`);
+      }, { once: true });
+      recordingStream.getVideoTracks()[0]?.addEventListener('ended', stopRecording, { once: true });
+      recordingStartedAt = Date.now();
+      drawPreview(canvas, context, targetFrame);
+      outputRecorder.start(1000);
+      clearInterval(recordingClock);
+      recordingClock = setInterval(updateRecordButtons, 1000);
+      updateRecordButtons();
+    } catch (error) {
+      recordingStream?.getTracks().forEach((track) => track.stop());
+      canvasStream?.getTracks().forEach((track) => track.stop());
+      recordingVideo?.pause();
+      if (recordingVideo) recordingVideo.srcObject = null;
+      recordingStream = null;
+      canvasStream = null;
+      recordingVideo = null;
+      outputRecorder = null;
+      recordButtons.forEach((button) => { delete button.dataset.busy; });
+      updateRecordButtons();
+      notify(error?.name === 'NotAllowedError' ? 'Chưa cấp quyền quay màn hình.' : `Không quay được: ${error?.message || 'Lỗi thiết bị.'}`, 'err');
+    }
+  }
+  recordButtons.forEach((button) => button.addEventListener('click', () => {
+    if (outputRecorder?.state === 'recording') stopRecording();
+    else startRecording(button);
+  }));
+  $$('[data-open-output]').forEach((b) => b.addEventListener('click', async () => {
+    const state = await api.openOutput();
+    if (state?.open) setOutputOpen(true);
+  }));
+  api.onOutput(({ open }) => {
+    setOutputOpen(open);
     // tránh phát tiếng 2 lần: khi cửa sổ phát mở, khung xem trước tự tắt tiếng
     setPreviewSrc(false);
     if (open) notify('Đã mở màn hình phát. Trong TikTok LIVE Studio chọn “Chụp cửa sổ” → cửa sổ này.');
@@ -451,6 +620,12 @@
     save({ previewSound: e.target.checked }, true);
     setPreviewSrc(true);
   }));
+  $$('.quiz-music-cb').forEach((cb) => cb.addEventListener('change', (e) => {
+    const enabled = e.target.checked;
+    settings.overlay.quizMusic = enabled;
+    $$('.quiz-music-cb').forEach((x) => { x.checked = enabled; });
+    save({ overlay: { quizMusic: enabled } }, true);
+  }));
 
   // Khung xem cảnh: chỉ khung ở tab đang mở được chạy, tab khác tắt hẳn cho nhẹ máy
   // Tự hồi phục khung xem: không nhận được nhịp "còn sống" 4 giây -> tải lại khung
@@ -460,8 +635,9 @@
     const vis = $$('.live-preview').some((f) => f.dataset.src && $('#view-' + f.dataset.for).classList.contains('active'));
     if (vis && !document.hidden && Date.now() - lastAlive > 4000) { lastAlive = Date.now(); setPreviewSrc(true); }
   }, 2000);
-  // cửa sổ hiện lại sau khi thu nhỏ / máy ngủ dậy: tải lại khung cho chắc
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { lastAlive = Date.now(); setPreviewSrc(true); } });
+  // Giữ nguyên phiên đang chạy khi chuyển sang ứng dụng khác; heartbeat bên dưới
+  // vẫn tự khôi phục preview nếu iframe thực sự bị treo.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) lastAlive = Date.now(); });
   api.onPreviewReload(() => { lastAlive = Date.now(); setPreviewSrc(true); });
   $$('[data-reload-preview]').forEach((b) => b.addEventListener('click', () => { setPreviewSrc(true); notify('Đã tải lại khung xem'); }));
 
@@ -471,7 +647,10 @@
     const src = `http://127.0.0.1:${server.port}/?preview${mute ? '&mute=1' : ''}${showSafe ? '&safe=1' : ''}`;
     $$('.live-preview').forEach((iframe) => {
       const visible = $('#view-' + iframe.dataset.for).classList.contains('active');
-      const want = visible ? src : '';
+      // Giữ cảnh GPLX chạy nền khi người dùng chuyển sang dashboard/cài đặt.
+      // Các cảnh xem trước khác vẫn được dỡ khỏi iframe khi ẩn để tiết kiệm tài nguyên.
+      const keepQuizAlive = iframe.dataset.for === 'quiz' && settings?.overlay?.mode === 'quiz';
+      const want = visible || keepQuizAlive ? src : '';
       if (force || iframe.dataset.src !== want) {
         iframe.dataset.src = want;
         iframe.src = want || 'about:blank';
@@ -482,16 +661,27 @@
   // ---------- Cài đặt ----------
   let saveTimer = 0;
   let pending = {};
+  let saveWaiters = [];
   function save(patch, immediate = false) {
     pending = deepMerge(pending, patch);
+    const result = new Promise((resolve) => saveWaiters.push(resolve));
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
       const p = pending;
+      const waiters = saveWaiters;
       pending = {};
-      const r = await api.updateSettings(p);
-      settings = r.settings;
-      renderServer(r.server);
+      saveWaiters = [];
+      try {
+        const r = await api.updateSettings(p);
+        settings = r.settings;
+        renderServer(r.server);
+        waiters.forEach((resolve) => resolve(true));
+      } catch (error) {
+        notify(`Không lưu được cài đặt: ${error.message || 'Lỗi không xác định.'}`, 'err');
+        waiters.forEach((resolve) => resolve(false));
+      }
     }, immediate ? 0 : 250);
+    return result;
   }
   function deepMerge(a, b) {
     const o = { ...a };
@@ -524,6 +714,7 @@
     }
     $('#autoReconnect').checked = settings.autoReconnect;
     $$('.preview-sound-cb').forEach((x) => { x.checked = settings.previewSound; });
+    $$('.quiz-music-cb').forEach((x) => { x.checked = !!o.quizMusic; });
     $('#port').value = settings.port;
   }
 
@@ -596,12 +787,30 @@
     save({ overlay: { [b.dataset.clear]: '' } }, true);
   }));
 
-  $('#btn-tt-login').addEventListener('click', () => api.tiktokLogin());
-  $('#btn-tt-logout').addEventListener('click', async () => {
-    await api.tiktokLogout();
-    notify('Đã xoá phiên đăng nhập TikTok trên máy');
+  $('#btn-tt-login').addEventListener('click', async () => {
+    try {
+      await api.tiktokLogin();
+      notify('Đã mở cửa sổ đăng nhập TikTok. Đăng nhập hoặc xác minh rồi đóng cửa sổ.');
+    } catch (error) {
+      notify(`Không mở được đăng nhập TikTok: ${error.message || 'Lỗi không xác định.'}`, 'err');
+    }
   });
-  $('#autoReconnect').addEventListener('change', (e) => save({ autoReconnect: e.target.checked }, true));
+  $('#btn-tt-logout').addEventListener('click', async () => {
+    try {
+      await api.tiktokLogout();
+      notify('Đã xoá phiên đăng nhập TikTok trên máy');
+    } catch (error) {
+      notify(`Không xoá được phiên TikTok: ${error.message || 'Lỗi không xác định.'}`, 'err');
+    }
+  });
+  $('#autoReconnect').addEventListener('change', async (e) => {
+    const enabled = e.target.checked;
+    if (!await save({ autoReconnect: enabled }, true)) {
+      e.target.checked = !!settings?.autoReconnect;
+      return;
+    }
+    notify(enabled ? 'Đã bật tự động kết nối lại, áp dụng ngay.' : 'Đã tắt tự động kết nối lại.');
+  });
   $('#btn-apply-port').addEventListener('click', async () => {
     const port = Number($('#port').value);
     if (!(port >= 1024 && port <= 65535)) return notify('Cổng phải từ 1024 đến 65535', 'err');
@@ -619,6 +828,7 @@
 
   api.init().then((init) => {
     settings = init.settings;
+    setOutputOpen(init.outputOpen);
     $('#username').value = settings.username;
     $('#ver').textContent = 'v' + init.version;
     renderSettings();

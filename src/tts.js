@@ -1,13 +1,12 @@
 'use strict';
 /*
  * Giọng đọc tiếng Việt cho chế độ Đi Chùa Online (port từ server.ts của repo gốc).
- * Dùng dịch vụ đọc của Microsoft Edge (giọng vi-VN-NamMinhNeural), lỗi thì chuyển sang Google Translate.
+ * Dùng dịch vụ đọc của Microsoft Edge (giọng tiếng Việt nam/nữ), lỗi thì chuyển sang Google Translate.
  * Lưu ý: cả hai là dịch vụ trực tuyến bên ngoài — câu cần đọc được gửi tới đó.
  */
 const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts');
 
-const TTS_VOICE = 'vi-VN-NamMinhNeural';
-const TTS_PITCH = '-4%';
+const TTS_VOICES = { male: 'vi-VN-NamMinhNeural', female: 'vi-VN-HoaiMyNeural' };
 const escapeXml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 function splitTtsText(text, max = 190) {
@@ -26,11 +25,12 @@ function splitTtsText(text, max = 190) {
   return chunks;
 }
 
-async function edgeTts(text, rate) {
+async function edgeTts(text, rate, gender) {
   const tts = new MsEdgeTTS();
   try {
-    await tts.setMetadata(TTS_VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(escapeXml(text), { rate: `${Math.round((rate - 1) * 100)}%`, pitch: TTS_PITCH });
+    await tts.setMetadata(TTS_VOICES[gender] || TTS_VOICES.male, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+    const pitch = gender === 'female' ? '0%' : '-4%';
+    const { audioStream } = tts.toStream(escapeXml(text), { rate: `${Math.round((rate - 1) * 100)}%`, pitch });
     const chunks = [];
     const read = (async () => {
       for await (const c of audioStream) chunks.push(c);
@@ -62,12 +62,13 @@ async function googleTts(text) {
 
 const cache = new Map();
 
-async function synthesize(text, rate) {
-  const key = `${rate}|${text}`;
+async function synthesize(text, rate, gender = 'male') {
+  gender = gender === 'female' ? 'female' : 'male';
+  const key = `${gender}|${rate}|${text}`;
   let audio = cache.get(key);
   if (!audio) {
     try {
-      audio = await edgeTts(text, rate);
+      audio = await edgeTts(text, rate, gender);
     } catch (err) {
       console.warn('[tts] Edge lỗi, chuyển sang Google:', err.message);
       audio = await googleTts(text);

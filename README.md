@@ -17,12 +17,15 @@ App máy tính tạo **cảnh tương tác cho TikTok LIVE**, chạy hoàn toàn
 - **👻 Live Ma Online** — người xem hoá ma, gõ `hù` / `trốn` / `tìm` / `bùa` / `gọi hồn` / `tắt đèn`… để chơi với nhau; quà lớn gọi Bà Ma + jumpscare; vòng TRỐN TÌM định kỳ.
 - **🪷 Đi Chùa Online** — chánh điện; người xem ngồi bồ đoàn, gõ `adidaphat` lên thắp hương; quà làm sen vàng nở, giọng đọc cảm ơn và chúc; thả tim đủ mục tiêu thì mưa hoa sen.
 - **🎬 Rạp Phim Online** — phòng chiếu phim; người xem được chào, vào ghế ngồi; chiếu danh sách phim (link YouTube, .mp4/.webm hoặc file trên máy); lệnh `vỗ tay` / `haha` / `wow` / `bắp`; quà = ghế VIP; đủ tim = mưa bắp rang. 4 kiểu phòng: Cổ điển, VIP Gold, IMAX, Gia đình.
+- **🚦 Ôn thi GPLX** — chọn hạng, xáo ngẫu nhiên ngân hàng câu hỏi, đặt thời gian mỗi câu; hết giờ tự hiện đáp án/kết quả rồi chuyển câu. Có sẵn ngân hàng 600 câu (kèm ảnh biển báo, sa hình); tạo/sửa/xoá câu hỏi và hạng ngay trong app, dữ liệu lưu trong SQLite trên máy. Người xem bình luận A/B/C/D để trả lời, giọng đọc câu hỏi và đáp án.
 
 Mở tab nào thì cảnh đó chạy trên live.
 
-| 👻 Live Ma Online | 🪷 Đi Chùa Online | 🎬 Rạp Phim Online |
-|---|---|---|
-| ![Live Ma Online](docs/screenshots/live-ma-online.png) | ![Đi Chùa Online](docs/screenshots/di-chua-online.png) | ![Rạp Phim Online](docs/screenshots/rap-phim-online.png) |
+| 👻 Live Ma Online | 🪷 Đi Chùa Online |
+|---|---|
+| ![Live Ma Online](docs/screenshots/live-ma-online.png) | ![Đi Chùa Online](docs/screenshots/di-chua-online.png) |
+| **🎬 Rạp Phim Online** | **🚦 Ôn thi GPLX** |
+| ![Rạp Phim Online](docs/screenshots/rap-phim-online.png) | ![Ôn thi GPLX](docs/screenshots/on-thi-gplx.png) |
 
 ## Tải & cài đặt (người dùng)
 
@@ -55,7 +58,7 @@ Không biết Mac chip gì: bấm  → **Giới thiệu về máy Mac** — “C
 
 ### Lên live lần đầu
 
-1. **Chọn cảnh**: bấm tab 👻 Ma / 🪷 Chùa / 🎬 Rạp ở menu trái.
+1. **Chọn cảnh**: bấm tab 👻 Ma / 🪷 Chùa / 🎬 Rạp / 🚦 GPLX ở menu trái.
 2. **Thêm vào TikTok LIVE Studio**: khung **dọc**, thêm nguồn **Link** `http://lvh.me:3000`, kích thước **1080 × 1920**, kéo phủ kín khung. (LIVE Studio không nhận `localhost`; `lvh.me` luôn trỏ về chính máy bạn.)
 3. Bấm **Go LIVE** trên TikTok LIVE Studio.
 4. **Kết nối**: ở Bảng điều khiển nhập username TikTok (không cần @) → **Kết nối**.
@@ -64,14 +67,20 @@ Chưa live vẫn thử được bằng các nút **Gửi thử** trong từng ta
 
 ## Chạy từ mã nguồn (nhà phát triển)
 
-Cần **Node.js 18+** và **git**.
+Cần **Node.js 20.19+ (khuyên dùng 22 LTS)** và **git**.
 
 ```bash
 git clone https://github.com/tanthuan031/StudioLive.git
 cd StudioLive
 npm install
-npm start
+npm start          # chế độ phát triển (Vite + Electron)
 ```
+
+| Lệnh | Tác dụng |
+|---|---|
+| `npm start` / `npm run dev` | Chạy Vite + Electron. Sửa giao diện (`renderer/`) thì tự cập nhật; sửa `src/*.js` thì Electron tự khởi động lại. **Ctrl+C** để dừng (nhấn 2 lần để buộc thoát ngay). |
+| `npm run start:prod` | Build giao diện vào `renderer/dist` rồi chạy như bản cài thật. |
+| `npm run build:renderer` | Chỉ build giao diện. |
 
 Đóng gói bản cài (không ký số):
 
@@ -91,13 +100,20 @@ src/direct.js     Đọc sự kiện qua trình duyệt ẩn + giải mã protob
 src/server.js     Server overlay Express + Socket.IO (chỉ 127.0.0.1) + giọng đọc /api/tts
 src/tts.js        Giọng đọc tiếng Việt (Microsoft Edge, dự phòng Google)
 src/settings.js   Lưu cài đặt trong thư mục userData
-renderer/         Giao diện điều khiển
-overlay/          Trang hiển thị trên live: game.js (Nhà Ma), temple.js (Đi Chùa), rap.js (Rạp Phim), faces.js, audio.js
+src/quiz-store.js Ngân hàng câu hỏi GPLX (SQLite, node:sqlite)
+scripts/dev.js    Chạy chế độ phát triển: Vite + Electron, tự khởi động lại, dừng sạch khi Ctrl+C
+renderer/         Giao diện điều khiển Vue 3, build bằng Vite vào renderer/dist trước khi chạy/đóng gói
+renderer/App.vue  Khung giao diện điều khiển; LiveMaView.vue, TempleView.vue, CinemaView.vue, LicenseQuizView.vue là các cảnh Vue; QuizManager.vue quản lý ngân hàng đề
+renderer/app.js   Cầu nối sự kiện hiện có cho các màn hình và tính năng chưa chuyển thành Vue component
+overlay/          Trang hiển thị trên live: game.js (Nhà Ma), temple.js (Đi Chùa), rap.js (Rạp Phim), quiz.js (GPLX), faces.js, audio.js
 overlay/chua-assets/  Ảnh, nhân vật, hiệu ứng, nhạc của cảnh Đi Chùa
+data/             Ngân hàng 600 câu GPLX (quiz-600-meothilaixe.json) + ảnh câu hỏi (quiz-images/*.webp)
 build/icon.png    Icon app
 ```
 
-Cài đặt người dùng lưu tại `~/Library/Application Support/StudioLive/settings.json` (macOS), `%APPDATA%\StudioLive\settings.json` (Windows).
+Chỉ cảnh đang chọn mới chạy vòng vẽ; các cảnh khác dừng hẳn để máy nhẹ. Ảnh mới thêm vào `data/` hoặc `overlay/` nên dùng **WebP** cho gọn (xem [docs/BUILD.md](docs/BUILD.md#tài-nguyên-ảnh--dung-lượng)).
+
+Cài đặt người dùng lưu tại `~/Library/Application Support/StudioLive/settings.json` (macOS), `%APPDATA%\StudioLive\settings.json` (Windows). Ngân hàng câu hỏi lưu trong `quiz.sqlite` cùng thư mục dữ liệu ứng dụng.
 
 > Lưu ý: giữ `tiktok-live-connector` ở **2.0.0** (MIT). Các bản mới hơn dùng giấy phép AGPL-3.0.
 

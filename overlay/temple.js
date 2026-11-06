@@ -135,7 +135,8 @@
     ui = opts.ui;
     sfx = opts.sfx;
     last = clock();
-    requestAnimationFrame(loop);
+    started = true;
+    kick();
     setInterval(tick1s, 1000);
   }
 
@@ -150,6 +151,7 @@
     if (enabled && !was) lastSpeechAt = Date.now();
     if (!enabled) voice.stop();
     syncMusic();
+    kick();
   }
 
   const channelName = () => (cfg.chuaName || '').trim() || 'Tâm An';
@@ -159,8 +161,7 @@
     else if (!p && pauseAt) {
       pausedMs += performance.now() - pauseAt;
       pauseAt = 0;
-      last = clock();
-      requestAnimationFrame(loop);
+      kick();
     }
     if (p) voice.stop();
     syncMusic();
@@ -534,14 +535,22 @@
   }
 
   // ---------------- Vòng lặp ----------------
+  // Cảnh không được chọn thì dừng hẳn vòng vẽ (không tốn CPU/GPU); kick() chạy lại khi cần
+  let rafId = 0;
+  let started = false;
+  function kick() {
+    if (!started || rafId || pauseAt || !enabled) return;
+    last = clock();
+    rafId = requestAnimationFrame(loop);
+  }
   function loop(rt) {
-    if (pauseAt) return;
-    requestAnimationFrame(loop);
+    rafId = 0;
+    if (pauseAt || !enabled) return;
+    rafId = requestAnimationFrame(loop);
     const t = rt - pausedMs;
     if (t - last < FRAME_MS - 2) return;
     const dt = Math.min(0.06, (t - last) / 1000);
     last = t;
-    if (!enabled) return;
     update(dt, t);
     draw(t);
   }

@@ -49,6 +49,8 @@ class OverlayServer {
       }
     });
 
+    // Ảnh câu hỏi đã chuyển sang WebP: link .png cũ (bộ đề tự tạo/xuất trước đây) vẫn hiện được
+    app.get(/^\/quiz-images\/(cau\d+)\.png$/i, (req, res) => res.redirect(301, `/quiz-images/${req.params[0]}.webp`));
     app.use('/quiz-images', express.static(path.join(__dirname, '..', 'data', 'quiz-images'), {
       fallthrough: false,
       maxAge: '7d',

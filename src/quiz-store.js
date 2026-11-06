@@ -245,14 +245,22 @@ class QuizStore {
     if (image.length > 7_000_000 || !/^data:image\/(png|jpeg|webp|gif);base64,[a-z\d+/]+=*$/i.test(image)) throw new Error('Ảnh phải là PNG, JPG, WebP hoặc GIF nhỏ hơn 5 MB, hoặc ảnh từ ngân hàng MeoThiLaiXe');
     return image;
   }
+  // Ảnh ngân hàng câu hỏi nằm sẵn trong app (data/quiz-images, định dạng WebP cho nhẹ).
+  // Chuyển các đường dẫn cũ (link meothilaixe.top, file .png bản trước) sang file WebP có sẵn.
   localizeMeoThiImages() {
-    const rows = this.db.prepare("SELECT id,image FROM questions WHERE image LIKE 'https://meothilaixe.top/images/cau%.png'").all();
+    const rows = this.db.prepare("SELECT id,image FROM questions WHERE image LIKE 'https://meothilaixe.top/images/cau%' OR image LIKE '/quiz-images/cau%.png'").all();
+    if (!rows.length) return;
     const update = this.db.prepare('UPDATE questions SET image=? WHERE id=?');
     const root = path.join(__dirname, '..', 'data', 'quiz-images');
-    for (const row of rows) {
-      const match = String(row.image).match(/\/images\/(cau\d+\.png)$/i);
-      if (match && fs.existsSync(path.join(root, match[1]))) update.run(`/quiz-images/${match[1]}`, row.id);
-    }
+    this.db.exec('BEGIN');
+    try {
+      for (const row of rows) {
+        const match = String(row.image).match(/\/(cau\d+)\.(png|jpe?g|webp)$/i);
+        const file = match && `${match[1]}.webp`;
+        if (file && fs.existsSync(path.join(root, file))) update.run(`/quiz-images/${file}`, row.id);
+      }
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   deleteQuestion(id) { this.db.prepare('DELETE FROM questions WHERE id=?').run(Number(id)); return this.activeData(); }
 }

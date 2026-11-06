@@ -330,11 +330,20 @@ ipcMain.handle('quiz:assign-bank-class', (_e, licenseClass, ids) => {
 });
 ipcMain.handle('quiz:copy-questions', (_e, targetId, sourceIds, licenseClass) => publishQuiz(quizStore.copyQuestions(targetId, sourceIds, licenseClass)));
 
+// Ngân hàng 600 câu chỉ đọc từ đĩa một lần (file ~300KB), các lần sau dùng bản đã nạp
+let meoThiBank;
+function loadMeoThiBank() {
+  if (meoThiBank === undefined) {
+    const bankPath = path.join(__dirname, '..', 'data', 'quiz-600-meothilaixe.json');
+    meoThiBank = fs.existsSync(bankPath) ? JSON.parse(fs.readFileSync(bankPath, 'utf8')) : null;
+  }
+  return meoThiBank;
+}
+
 function ensureMeoThiLaiXeBank() {
   quizStore.localizeMeoThiImages();
-  const bankPath = path.join(__dirname, '..', 'data', 'quiz-600-meothilaixe.json');
-  if (!fs.existsSync(bankPath)) return;
-  const bank = JSON.parse(fs.readFileSync(bankPath, 'utf8'));
+  const bank = loadMeoThiBank();
+  if (!bank) return;
   if (!quizStore.listSets().some((set) => set.title === bank.title)) {
     const set = quizStore.createSet(bank.title);
     quizStore.importQuestions(set.id, bank.questions);
@@ -513,4 +522,12 @@ if (!gotLock) {
     live.stop(true);
     overlay.stop();
   });
+
+  // Ctrl+C / kill từ terminal: thoát gọn, quá 2 giây thì buộc thoát
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => {
+      setTimeout(() => app.exit(0), 2000).unref();
+      app.quit();
+    });
+  }
 }

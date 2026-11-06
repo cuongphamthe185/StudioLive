@@ -2,8 +2,11 @@
   "name": "studio-live",
   "productName": "StudioLive",
   "version": "1.0.0",
-  "description": "StudioLive — cảnh tương tác cho TikTok LIVE: Live Ma Online, Đi Chùa Online & Rạp Phim Online",
+  "description": "StudioLive — cảnh tương tác cho TikTok LIVE: Live Ma Online, Đi Chùa Online, Rạp Phim Online & Live GPLX",
   "main": "src/main.js",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "node scripts/dev.js",
     "build:renderer": "vite build --config renderer/vite.config.mjs",
@@ -37,7 +40,7 @@
     },
     "files": [
       "src/**/*",
-      "renderer/**/*",
+      "renderer/dist/**/*",
       "overlay/**/*",
       "data/**/*",
       "package.json"

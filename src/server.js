@@ -16,10 +16,12 @@ const MEDIA_TYPES = {
  * OBS / TikTok Live Studio thêm Browser Source trỏ tới http://localhost:<port>
  */
 class OverlayServer {
-  constructor({ getConfig, getSnapshot, getPaused }) {
+  constructor({ getConfig, getSnapshot, getPaused, getQuizData, getQuizState }) {
     this.getConfig = getConfig;
     this.getPaused = getPaused || (() => false);
     this.getSnapshot = getSnapshot;
+    this.getQuizData = getQuizData || (() => null);
+    this.getQuizState = getQuizState || (() => null);
     this.server = null;
     this.io = null;
     this.port = 0;
@@ -35,8 +37,9 @@ class OverlayServer {
       const text = String(req.query.text || '').trim().slice(0, 1500);
       if (!text) return res.status(400).send('Missing text parameter');
       const rate = Math.min(1.5, Math.max(0.5, Number(req.query.rate) || 1));
+      const voice = ['female', 'male'].includes(req.query.voice) ? req.query.voice : 'male';
       try {
-        const audio = await require('./tts').synthesize(text, rate);
+        const audio = await require('./tts').synthesize(text, rate, voice);
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Cache-Control', 'public, max-age=86400');
         res.send(audio);
@@ -46,6 +49,13 @@ class OverlayServer {
       }
     });
 
+    // Ảnh câu hỏi đã chuyển sang WebP: link .png cũ (bộ đề tự tạo/xuất trước đây) vẫn hiện được
+    app.get(/^\/quiz-images\/(cau\d+)\.png$/i, (req, res) => res.redirect(301, `/quiz-images/${req.params[0]}.webp`));
+    app.use('/quiz-images', express.static(path.join(__dirname, '..', 'data', 'quiz-images'), {
+      fallthrough: false,
+      maxAge: '7d',
+      immutable: true
+    }));
     app.use(express.static(path.join(__dirname, '..', 'overlay'), { index: 'index.html' }));
     // Thư viện Three.js cho cảnh DJ Club 3D (đóng gói kèm app, không tải từ mạng)
     app.use('/vendor/three', express.static(path.join(__dirname, '..', 'node_modules', 'three')));
@@ -96,11 +106,17 @@ class OverlayServer {
     const io = new Server(server, { cors: { origin: false } });
     io.on('connection', (socket) => {
       socket.emit('config', this.getConfig().overlay);
+      socket.emit('quiz:data', this.getQuizData());
+      const quizState = this.getQuizState();
+      if (quizState?.active) socket.emit('quiz', { action: quizState.running ? 'start' : 'pause', index: quizState.index, reveal: quizState.reveal, seconds: quizState.seconds });
       socket.emit('stats', this.getSnapshot().stats);
       socket.emit('pause', this.getPaused());
       if (this.onConnection) this.onConnection(socket);
       this.emitClients();
       socket.on('disconnect', () => this.emitClients());
+      socket.on('quiz:advance', (index) => {
+        if (this.onQuizAdvance) this.onQuizAdvance(Number(index));
+      });
     });
 
     await new Promise((resolve, reject) => {

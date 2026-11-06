@@ -18,6 +18,7 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+
 /* Sân khấu luôn 1080x1920 (9:16), được scale để vừa mọi kích thước Browser Source */
 #stage {
   position: absolute;
@@ -27,6 +28,7 @@ html, body {
   transform-origin: 0 0;
   overflow: hidden;
 }
+
 
 /* ---------- Nền ma mị ---------- */
 #bg { position: absolute; inset: 0; opacity: 0; transition: opacity .8s; }
@@ -542,6 +544,39 @@ body.show-safe #safe-guide { display: block; }
 
 /* ================= RẠP PHIM ONLINE ================= */
 #rap { position: absolute; inset: 0; width: 1080px; height: 1920px; display: none; }
+#quiz-ui { --quiz-bg:#07151b; --quiz-accent:#2dd4bf; --quiz-card:#071b23; --quiz-text:#fff; display:none; position:absolute; inset:0; padding:230px 105px 470px; color:var(--quiz-text); text-align:center; font-family:system-ui,sans-serif; background:radial-gradient(ellipse at 50% 30%,color-mix(in srgb,var(--quiz-bg) 72%,white),var(--quiz-bg) 72%,color-mix(in srgb,var(--quiz-bg) 55%,black)); }
+body.mode-quiz #hud, body.mode-quiz #top-gifter, body.mode-quiz #game-ui, body.mode-quiz #chat-zone, body.mode-quiz #gift-zone, body.mode-quiz #toasts, body.mode-quiz #streak-zone, body.mode-quiz #bg, body.mode-quiz #game, body.mode-quiz #temple-ui, body.mode-quiz #temple, body.mode-quiz #rap-ui, body.mode-quiz #rap { display:none!important; }
+body.mode-quiz #quiz-ui { display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.q-content { display:flex; width:100%; min-height:calc(100% - 72px); flex-direction:column; justify-content:center; gap:16px; margin-block:auto; box-sizing:border-box; }
+.q-kicker { font-size:30px; letter-spacing:4px; color:var(--quiz-accent); font-weight:900; margin-bottom:28px; }
+.q-count { font-size:23px; color:#a7f3d0; margin-bottom:22px; }
+.q-timer { display:inline-grid; place-items:center; min-width:96px; height:66px; padding:0 22px; margin:0 auto 20px; border-radius:999px; background:color-mix(in srgb,var(--quiz-bg) 55%,black); border:3px solid var(--quiz-accent); color:var(--quiz-text); font-size:38px; font-weight:900; font-variant-numeric:tabular-nums; }
+.q-timer.urgent { color:#fecaca; border-color:#fb7185; background:#4c1020; }
+.q-question { min-height:0; display:grid; place-items:center; gap:14px; padding:24px; border:3px solid var(--quiz-accent); border-radius:26px; background:color-mix(in srgb,var(--quiz-card) 94%,transparent); box-shadow:0 16px 52px #0009; color:var(--quiz-text); font-size:38px; line-height:1.24; font-weight:900; }
+.q-question-image { display:block; width:100%; max-width:860px; max-height:min(500px,31vh); object-fit:contain; border-radius:16px; }
+.q-question-image[hidden] { display:none; }
+.q-options { display:grid; gap:15px; margin-top:28px; }
+.q-option { text-align:left; padding:19px 25px; border-radius:19px; background:color-mix(in srgb,var(--quiz-card) 76%,black); border:2px solid color-mix(in srgb,var(--quiz-accent) 42%,var(--quiz-bg)); color:var(--quiz-text); font-size:28px; font-weight:700; }
+.q-option b { display:inline-grid; place-items:center; margin-right:16px; width:48px; height:48px; border-radius:50%; color:var(--quiz-bg); background:var(--quiz-accent); }
+.q-option.correct { border-color:#4ade80; background:#14532d; }
+.q-prompt { margin-top:28px; color:#fcd34d; font-size:25px; font-weight:900; letter-spacing:1px; }
+.q-result { margin-top:14px; color:#86efac; font-size:26px; font-weight:900; white-space:pre-line; }
+.q-fit-tight .q-kicker { margin-bottom:16px; }
+.q-fit-tight .q-count { margin-bottom:14px; }
+.q-fit-tight .q-timer { margin-bottom:12px; }
+.q-fit-tight .q-question { gap:10px; padding:18px; }
+.q-fit-tight .q-options { gap:10px; margin-top:18px; }
+.q-fit-tight .q-prompt { margin-top:18px; }
+.q-fit-tight .q-result { margin-top:8px; }
+.q-fit-text .q-question { font-size:38px; line-height:1.2; }
+.q-fit-text .q-option { padding:16px 22px; font-size:25px; }
+.q-fit-text .q-option b { width:42px; height:42px; }
+.q-fit-text .q-prompt { font-size:22px; }
+.q-fit-text .q-result { font-size:23px; }
+.q-content .q-kicker, .q-content .q-count, .q-content .q-timer, .q-content .q-options, .q-content .q-prompt, .q-content .q-result { margin-top:0; margin-bottom:0; }
+.q-fireworks { position:absolute; inset:0; z-index:8; overflow:hidden; pointer-events:none; }
+.q-spark { position:absolute; left:var(--x); top:var(--y); width:14px; height:14px; border-radius:50%; opacity:0; background:hsl(var(--hue),100%,65%); box-shadow:0 0 16px 5px hsla(var(--hue),100%,65%,.75); animation:q-spark-burst 1.35s cubic-bezier(.15,.65,.35,1) forwards; }
+@keyframes q-spark-burst { 0% { opacity:1; transform:translate(0,0) scale(1); } 75% { opacity:1; } 100% { opacity:0; transform:translate(var(--dx),var(--dy)) scale(.15); } }
 #rap-ui { position: absolute; inset: 0; pointer-events: none; display: none; font-family: "Be Vietnam Pro", system-ui, sans-serif; }
 body.mode-rap #hud, body.mode-rap #top-gifter, body.mode-rap #game-ui, body.mode-rap #chat-zone, body.mode-rap #gift-zone,
 body.mode-rap #toasts, body.mode-rap #streak-zone, body.mode-rap #bg, body.mode-rap #game, body.mode-rap #temple-ui, body.mode-rap #temple { display: none !important; }

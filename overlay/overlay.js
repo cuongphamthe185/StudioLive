@@ -5,6 +5,7 @@
   const stage = $('stage');
   const params = new URLSearchParams(location.search);
   const isPreview = params.get('mute') === '1';
+  const isOutput = params.has('output') || !params.has('preview');
   let paused = false; // tạm dừng toàn bộ cảnh (bấm từ app)
   if (params.get('safe') === '1') document.body.classList.add('show-safe'); // lưới vùng bị TikTok che // khung xem trước trong app có thể tắt tiếng
 
@@ -468,6 +469,7 @@
     document.body.classList.toggle('mode-chua', cfg.mode === 'chua');
     document.body.classList.toggle('mode-rap', cfg.mode === 'rap');
     document.body.classList.toggle('mode-club', cfg.mode === 'club');
+    document.body.classList.toggle('mode-quiz', cfg.mode === 'quiz');
     // Bù màu: TikTok nén video làm màu nhạt và tối đi, tăng nhẹ độ tươi / tương phản / sáng
     const b = Math.max(0, Math.min(40, Number(cfg.liveBoost ?? 15))) / 100;
     stage.style.filter = b ? `saturate(${(1 + b).toFixed(3)}) contrast(${(1 + b * 0.3).toFixed(3)}) brightness(${(1 + b * 0.25).toFixed(3)})` : '';
@@ -475,6 +477,8 @@
     window.TempleScene.setConfig(cfg);
     window.RapScene.setConfig(cfg);
     window.ClubScene.setConfig(cfg);
+    window.QuizScene.setConfig(cfg, isPreview);
+    window.QuizScene.command({ index: cfg.quizIndex || 0, reveal: !!cfg.quizReveal });
     window.HauntAudio.update();
     syncAmbientFile();
     ensureFx();
@@ -578,6 +582,7 @@
       caption: document.querySelector('.r-caption')
     }
   });
+  window.QuizScene.init();
 
   // ---------- DJ Club ----------
   window.ClubScene.init({
@@ -606,9 +611,13 @@
   socket.on('rap', (c) => window.RapScene.command(c));
   socket.on('club', (c) => window.ClubScene.command(c));
   socket.on('clubRank', (p) => window.ClubScene.onRank(p));
+  socket.on('quiz', (c) => window.QuizScene.command(c));
+  socket.on('quiz:data', (data) => window.QuizScene.setData(data));
+  window.QuizScene.setAdvanceCallback((index) => { if (isOutput) socket.emit('quiz:advance', index); });
 
   socket.on('live', (ev) => {
     if (!ev || !ev.type || paused) return; // đang tạm dừng: bỏ qua sự kiện
+    if (cfg.mode === 'quiz') { if (ev.type === 'chat') window.QuizScene.onEvent(ev); return; }
     if (cfg.mode === 'rap') {
       if (ev.type === 'chat' && blocked(ev.text)) return;
       window.RapScene.onEvent(ev);

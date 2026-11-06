@@ -1,0 +1,7 @@
+{
+  "name": "@openapitools/openapi-generator-cli",
+  "version": "0.0.0-stub",
+  "description": "Empty stub. @eulerstream/euler-api-sdk lists the OpenAPI generator CLI as a runtime dependency but never imports it; this stub drops its large, vulnerable dependency tree (proxy-agent, basic-ftp, glob...). See package.json overrides.",
+  "license": "MIT",
+  "private": true
+}

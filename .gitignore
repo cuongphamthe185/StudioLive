@@ -18,3 +18,7 @@ npm-debug.log*
 *.tmp
 .env
 .env.*
+
+# Ghi chú cá nhân, không đưa lên git
+ideals/
+pending-notes/

@@ -91,6 +91,52 @@ class OverlayServer {
       res.sendFile(file, { headers: { 'Content-Type': type, 'Cache-Control': 'no-store' } });
     });
 
+    // Ảnh đại diện TikTok cho DJ Club: tải qua server này để trang overlay vẽ được lên cảnh 3D (cùng nguồn).
+    // Chỉ nhận ảnh từ máy chủ ảnh của TikTok, giữ tạm trong bộ nhớ.
+    const AVATAR_HOSTS = /(^|.)(tiktokcdn(-[a-z]+)?.com|tiktokcdn.net|ibytedtos.com|ibyteimg.com|byteimg.com|muscdn.com|tiktokv.com)$/i;
+    const avatarCache = new Map();
+    app.get('/club-avatar', async (req, res) => {
+      let u;
+      try { u = new URL(String(req.query.u || '')); } catch { return res.sendStatus(400); }
+      if (u.protocol !== 'https:' || !AVATAR_HOSTS.test(u.hostname)) return res.sendStatus(403);
+      let hit = avatarCache.get(u.href);
+      if (!hit) {
+        try {
+          const r = await fetch(u.href, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+          const type = r.headers.get('content-type') || '';
+          if (!r.ok || !type.startsWith('image/') || !AVATAR_HOSTS.test(new URL(r.url).hostname)) return res.sendStatus(502);
+          const buf = Buffer.from(await r.arrayBuffer());
+          if (buf.length > 1.5 * 1024 * 1024) return res.sendStatus(413);
+          hit = { type, buf };
+          avatarCache.set(u.href, hit);
+          if (avatarCache.size > 150) avatarCache.delete(avatarCache.keys().next().value);
+        } catch { return res.sendStatus(502); }
+      }
+      res.set({ 'Content-Type': hit.type, 'Cache-Control': 'public, max-age=3600' });
+      res.send(hit.buf);
+    });
+
+    // Ảnh đại diện giả cho người thử (nút "Gửi thử"): mặt cười đơn giản, mỗi số một màu
+    app.get('/club-demo-avatar/:n.svg', (req, res) => {
+      const n = Math.abs(parseInt(req.params.n, 10) || 0) % 12;
+      const hue = (n * 47) % 360;
+      const hair = ['#2b1d16', '#111', '#6b3e1f', '#c98a3c', '#333a56', '#7a2232'][n % 6];
+      const skin = ['#f6d3b3', '#e9b98f', '#f3c9a5', '#d9a07a'][n % 4];
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},75%,62%)"/><stop offset="1" stop-color="hsl(${(hue + 60) % 360},70%,40%)"/></linearGradient></defs>
+<rect width="256" height="256" fill="url(#b)"/>
+<ellipse cx="128" cy="250" rx="92" ry="70" fill="hsl(${(hue + 180) % 360},55%,45%)"/>
+<rect x="110" y="160" width="36" height="40" rx="12" fill="${skin}"/>
+<ellipse cx="128" cy="118" rx="62" ry="70" fill="${skin}"/>
+<path d="M64 112 Q62 44 128 42 Q196 44 192 112 Q178 76 150 70 Q120 86 80 84 Q70 96 64 112Z" fill="${hair}"/>
+<circle cx="104" cy="122" r="8" fill="#2a1a12"/><circle cx="152" cy="122" r="8" fill="#2a1a12"/>
+<circle cx="92" cy="146" r="9" fill="#ff8fa3" opacity=".45"/><circle cx="164" cy="146" r="9" fill="#ff8fa3" opacity=".45"/>
+<path d="M106 152 Q128 172 150 152" stroke="#7a2e2e" stroke-width="7" fill="none" stroke-linecap="round"/>
+</svg>`;
+      res.set({ 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+      res.send(svg);
+    });
+
     // Ảnh cho màn hình LED của DJ Club (file trên máy người dùng chọn)
     app.get('/club-screen/:i', (req, res) => {
       const list = this.getConfig().overlay.clubScreenImages || [];

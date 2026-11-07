@@ -18,7 +18,7 @@ export const L = {
   },
   podiumR: 88,
   // đám đông: hình thang hẹp dần về phía camera để vừa khung dọc (nửa bề ngang = halfX - (z - z0) * taper)
-  crowd: { halfX: 360, taper: 0.32, z0: 250, z1: 720 },
+  crowd: { halfX: 400, taper: 0.3, z0: 250, z1: 720 },
   floor: { x0: -1500, x1: 1500, z0: -160, z1: 1700, tile: 125 },
   title: { y: 730, z: -160, w: 1600, h: 130 },               // chữ chạy 3D trên giàn mái
   trussFrontZ: -80,

@@ -57,10 +57,12 @@ body.mode-club #temple-ui, body.mode-club #temple, body.mode-club #rap-ui, body.
 .c3-desk-text { position: absolute; left: 10px; right: 10px; top: 12px; height: 54px; border-radius: 6px; background: #050208;
   border: 1px solid rgba(255, 255, 255, .12); }
 .c3-desk-text span { line-height: 54px; font-size: 36px; font-weight: 900; color: #ffe4f6; text-shadow: 0 0 8px #ff2d95, 0 0 18px #ff2d95; }
-.c3-desk-lights { position: absolute; left: 14px; right: 14px; bottom: 10px; height: 14px;
+/* dải đèn chạy: dịch cả dải bằng transform (GPU làm, không phải vẽ lại) thay vì đổi background-position */
+.c3-desk-lights { position: absolute; left: 14px; right: 14px; bottom: 10px; height: 14px; overflow: hidden; }
+.c3-desk-lights::before { content: ""; position: absolute; left: -22px; right: 0; top: 0; bottom: 0;
   background: radial-gradient(circle, #fff 0 2px, #ff4fd8 3px 4px, transparent 5px) 0 0 / 22px 14px repeat-x;
-  animation: c-lights 1s steps(2) infinite; }
-@keyframes c-lights { to { background-position: 22px 0; } }
+  animation: c-lights 1s steps(2) infinite; will-change: transform; }
+@keyframes c-lights { to { transform: translateX(22px); } }
 
 /* ---------- Nhân vật (khung 340 × 460, chân ở mép dưới) ---------- */
 .c3-box { display: flex; align-items: flex-end; justify-content: center; transition: opacity .6s; }
@@ -100,17 +102,75 @@ body.mode-club #temple-ui, body.mode-club #temple, body.mode-club #rap-ui, body.
 .c3-box:not(.podium) .c-tag { font-size: 16px; padding: 1px 8px 1px 3px; }
 .c3-box:not(.podium) .c-av { width: 20px; height: 20px; }
 
-/* Cánh: ảnh một cặp cánh được tách đôi, mỗi bên vỗ quanh mép trong; đổi màu theo hạng bằng filter */
-.c3-wings { position: absolute; z-index: 0; left: 50%; bottom: 22%; width: 215px; height: 158px; transform: translateX(-50%);
-  filter: drop-shadow(0 0 12px var(--glow)); pointer-events: none; }
-.c3-wings.s1 { width: 270px; height: 198px; bottom: 16%; }
-.c3-wings.s3, .c3-wings.s4 { width: 200px; height: 146px; }
-.c3-wing { position: absolute; top: 0; width: 50%; height: 100%; background-repeat: no-repeat; background-size: 200% 100%; }
-.c3-wing.l { left: 0; background-position: 0 0; transform-origin: 100% 70%; animation: c-flap-l 1.1s ease-in-out infinite; }
-.c3-wing.r { right: 0; background-position: 100% 0; transform-origin: 0 70%; animation: c-flap-r 1.1s ease-in-out infinite; }
-.c3-wings.fallback .c3-wing { background: radial-gradient(ellipse at 100% 60%, var(--glow) 0, rgba(255, 255, 255, .35) 35%, transparent 70%); }
-.c3-wings.fallback .c3-wing.r { background: radial-gradient(ellipse at 0 60%, var(--glow) 0, rgba(255, 255, 255, .35) 35%, transparent 70%); }
-@keyframes c-flap-r { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(10deg); } }
-@keyframes c-flap-l { 0%, 100% { transform: rotate(3deg); } 50% { transform: rotate(-10deg); } }
-.c3-crown { position: absolute; z-index: 3; left: 50%; top: -34px; width: 64px; transform: translateX(-50%) rotate(-6deg);
-  filter: drop-shadow(0 0 10px #facc15); }
+/* Cánh: mỗi bên là một nửa ảnh cặp cánh, gốc cánh đặt đúng vai thật của nhân vật (cast.js đo dáng ảnh),
+   xoè ra hai bên rồi vỗ theo nhịp nhạc (--beat = 1 phách). Đổi màu theo hạng bằng filter. */
+.c3-wings { position: absolute; z-index: 0; left: 0; top: 0; pointer-events: none; filter: drop-shadow(0 0 10px var(--glow)); }
+.c3-wing { position: absolute; background-repeat: no-repeat; will-change: transform; }
+.c3-wing.l { --spread: 16; animation: c-wflap-l calc(var(--beat, .5s) * 2) ease-in-out infinite alternate; }
+.c3-wing.r { --spread: -16; animation: c-wflap-r calc(var(--beat, .5s) * 2) ease-in-out infinite alternate; }
+.c3-wings.s1 .c3-wing.l { --spread: 22; }
+.c3-wings.s1 .c3-wing.r { --spread: -22; }
+@keyframes c-wflap-l { from { transform: rotate(calc(var(--spread) * 1deg)); } to { transform: rotate(calc((var(--spread) + 14) * 1deg)); } }
+@keyframes c-wflap-r { from { transform: rotate(calc(var(--spread) * 1deg)); } to { transform: rotate(calc((var(--spread) - 14) * 1deg)); } }
+.c3-wing.fallback { background: radial-gradient(ellipse at 100% 30%, var(--glow) 0, rgba(255, 255, 255, .35) 35%, transparent 70%); }
+.c3-wing.r.fallback { background: radial-gradient(ellipse at 0 30%, var(--glow) 0, rgba(255, 255, 255, .35) 35%, transparent 70%); }
+/* bung cánh khi lên bục */
+.c3-wings.unfold { animation: c-unfold 1s cubic-bezier(.2, 1.55, .35, 1) both; transform-origin: var(--ox) var(--oy); }
+@keyframes c-unfold { 0% { transform: scale(.04, .5); opacity: 0; } 35% { opacity: 1; } 100% { transform: none; opacity: 1; } }
+/* quầng sáng màu hạng sau lưng, đập theo nhạc */
+.c3-aura { position: absolute; border-radius: 50%; background: radial-gradient(circle, var(--glow) 0, transparent 62%); opacity: .5;
+  animation: c-aura var(--beat, .5s) ease-in-out infinite alternate; }
+@keyframes c-aura { from { transform: scale(.88); opacity: .32; } to { transform: scale(1.06); opacity: .62; } }
+/* loé sáng + lông vũ bắn ra lúc bung cánh */
+.c3-flash { position: absolute; width: 60px; height: 60px; border-radius: 50%;
+  background: radial-gradient(circle, #fff 0, var(--glow) 35%, transparent 70%); animation: c-flash .8s ease-out both; }
+@keyframes c-flash { from { transform: scale(.3); opacity: 1; } to { transform: scale(7); opacity: 0; } }
+.c3-feather { position: absolute; width: 9px; height: 22px; margin: -11px 0 0 -4px; border-radius: 50% 50% 50% 50% / 70% 70% 30% 30%;
+  background: linear-gradient(#fff, var(--glow)); box-shadow: 0 0 6px var(--glow); opacity: 0; animation: c-feather 1.3s ease-out both; }
+@keyframes c-feather { 0% { transform: translate(0, 0) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--r)); opacity: 0; } }
+/* bụi sáng rơi từ cánh */
+.c3-dust { position: absolute; left: calc(18% + var(--i) * 19%); top: 38%; width: 5px; height: 5px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 6px 2px var(--glow); opacity: 0;
+  animation: c-dust 2.6s linear infinite; animation-delay: calc(var(--i) * .65s); }
+@keyframes c-dust { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(90px); opacity: 0; } }
+.c3-crown { position: absolute; z-index: 3; filter: drop-shadow(0 0 10px #facc15); }
+
+/* ---------- Camera áp sát: tập trung vào một người ---------- */
+.c3-box { transition: opacity .6s, filter .5s ease; }
+.c3-desk, .c3-title { transition: filter .5s ease; }
+.c3-box.c3-dim { filter: blur(4px) brightness(.42) saturate(.45); }
+.c3-desk.c3-dim, .c3-title.c3-dim { filter: blur(3px) brightness(.5); }
+.c3-box.c3-focus .c-img { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 16px rgba(255, 255, 255, .6)) drop-shadow(0 6px 6px rgba(0, 0, 0, .5)); }
+.c3-box.c3-pop .c3-col { animation: c-pop .75s cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes c-pop { 0% { transform: translateY(0) scale(1); } 35% { transform: translateY(-26px) scale(1.07); } 100% { transform: none; } }
+.c3-vig { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; z-index: 1; pointer-events: none; opacity: 0; transition: opacity .2s; }
+/* bảng tên kiểu truyền hình (nằm trên vùng bình luận của TikTok) */
+.c-cap { position: absolute; z-index: 4; left: 50%; bottom: 520px; display: flex; align-items: center; gap: 18px; max-width: 800px;
+  padding: 14px 30px 14px 14px; border-radius: 999px; overflow: hidden; opacity: 0; transform: translate(-50%, 40px) scale(.9);
+  background: linear-gradient(90deg, rgba(20, 4, 40, .92), rgba(60, 10, 70, .88)); border: 3px solid var(--cap, #f472b6);
+  box-shadow: 0 0 28px var(--cap, #f472b6), inset 0 0 20px rgba(255, 255, 255, .08); transition: opacity .35s, transform .45s cubic-bezier(.2, 1.4, .4, 1); }
+.c-cap.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.c-cap.on::after { content: ''; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .45) 48%, transparent 66%);
+  transform: translateX(-120%); animation: c-cap-shine 1.4s .35s ease-out; }
+@keyframes c-cap-shine { to { transform: translateX(120%); } }
+.c-cap.gift { --cap: #f472b6; }
+.c-cap.big { --cap: #facc15; background: linear-gradient(90deg, rgba(40, 24, 0, .94), rgba(90, 50, 0, .9)); }
+.c-cap.dj { --cap: #a855f7; background: linear-gradient(90deg, rgba(30, 6, 60, .94), rgba(80, 20, 120, .9)); }
+.c-cap-av { width: 96px; height: 96px; flex: none; border-radius: 50%; object-fit: cover; border: 4px solid var(--cap, #f472b6); box-shadow: 0 0 16px var(--cap, #f472b6); }
+.c-cap-txt { min-width: 0; text-align: left; }
+.c-cap-title { font-size: 24px; font-weight: 900; letter-spacing: 2px; color: var(--cap, #f472b6); text-shadow: 0 0 10px var(--cap, #f472b6); }
+.c-cap-name { font-size: 48px; font-weight: 900; line-height: 1.1; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 620px; }
+.c-cap-sub { font-size: 28px; font-weight: 800; color: #fde68a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 620px; }
+
+/* Hiệu năng khi đông người: mỗi nhân vật là một lớp riêng, giữ độ phân giải khi camera trôi (khỏi vẽ lại mỗi khung);
+   bóng đổ chỉ dùng cho người trên bục / đang được quay */
+.c3-box { will-change: transform; }
+.c3-box:not(.podium):not(.c3-focus) .c-img { filter: none; }
+
+/* máy đang chậm (tự giảm chất lượng): nhân vật khác mờ đi bằng độ trong, không nhoè */
+.c3-lite .c3-box.c3-dim { filter: none; opacity: .3; }
+.c3-lite .c3-desk.c3-dim, .c3-lite .c3-title.c3-dim { filter: none; opacity: .45; }
+
+/* bảng tên khi tour giới thiệu Top 3 / Top 4 */
+.c-cap.silver { --cap: #e2e8f0; background: linear-gradient(90deg, rgba(20, 24, 36, .94), rgba(60, 68, 90, .9)); }
+.c-cap.bronze { --cap: #fb923c; background: linear-gradient(90deg, rgba(40, 16, 4, .94), rgba(100, 46, 14, .9)); }

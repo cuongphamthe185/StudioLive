@@ -276,6 +276,15 @@
       noise(t + 0.1, 2.8, 0.8, d, { type: 'lowpass', f: 220, to: 60, a: 0.2, q: 0.7 });
     },
     pop() { const t = ac.currentTime; osc('sine', 700, t, 0.15, 0.15, out(0.3), { to: 1100 }); },
+    // ---- Pháo hoa (DJ Club) ----
+    fwLaunch() { const t = ac.currentTime, d = out(0.4); osc('sine', 500, t, 0.9, 0.035, d, { to: 1500 }); noise(t, 0.6, 0.05, d, { f: 4000, q: 1 }); },
+    fwBoom(size = 1) {
+      const t = ac.currentTime, d = out(0.8);
+      noise(t, 0.08, 0.5 * size, d, { f: 2500, q: 0.8 });
+      noise(t, 1.1 * size, 0.55 * size, d, { type: 'lowpass', f: 900, to: 70, q: 0.7 });
+      osc('sine', 85, t, 0.5, 0.3 * size, d, { to: 38 });
+      for (let i = 0; i < 6; i++) noise(t + 0.25 + Math.random() * 0.6, 0.03, 0.08, d, { f: rnd(3000, 6000), q: 3 });
+    },
     mo(n = 1) { // mõ gỗ
       const t = ac.currentTime, d = out(0.5);
       for (let i = 0; i < n; i++) {
@@ -613,7 +622,7 @@
 
   // ---------- API ----------
   // Giới hạn tần suất mỗi tiếng để không ồn khi người xem spam lệnh
-  const MIN_GAP = { applause: 700, crowdLaugh: 900, wow: 500, crunch: 300, scream: 350, boo: 500, whoosh: 300, footsteps: 600, pop: 150, creak: 800, jumpscare: 1500, thunder: 3000 };
+  const MIN_GAP = { fwBoom: 110, fwLaunch: 250, applause: 700, crowdLaugh: 900, wow: 500, crunch: 300, scream: 350, boo: 500, whoosh: 300, footsteps: 600, pop: 150, creak: 800, jumpscare: 1500, thunder: 3000 };
 
   function play(name, ...args) {
     const c = getCfg();

@@ -51,7 +51,7 @@
             </div>
           </div>
           <div class="field">
-            <label>Số tim để mưa pháo giấy</label>
+            <label>Số tim để bắn pháo hoa <span class="muted small">(pháo hoa + sàn vàng + pháo giấy)</span></label>
             <input type="number" class="inp" min="10" data-o="clubLikeGoal" data-num>
           </div>
           <div class="field">
@@ -75,6 +75,10 @@
           <div class="field">
             <label>Mỗi góc máy giữ <span class="val" id="v-clubCamEvery"></span></label>
             <input type="range" min="4" max="60" step="1" data-o="clubCamEvery" data-num>
+          </div>
+          <div class="field">
+            <label>Khói mù <span class="val" id="v-clubHaze"></span> <span class="muted small">(0% = tắt; khói sàn, bụi sáng, khói trong không khí)</span></label>
+            <input type="range" min="0" max="100" step="5" data-o="clubHaze" data-num>
           </div>
           <div class="toggles" style="margin-top:8px">
             <label class="toggle"><span>Tặng quà thì camera lia vào người tặng</span><input type="checkbox" data-o="clubCamera"><i></i></label>
@@ -141,7 +145,7 @@
           <div class="panel">
             <div class="panel-head"><h2>Điều khiển</h2></div>
             <div class="test-grid">
-              <button class="btn ghost" data-club="rain">🎉 Mưa pháo giấy</button>
+              <button class="btn ghost" data-club="rain">🎆 Bắn pháo hoa</button>
               <button class="btn ghost" data-club="dance">💃 Cả sàn cùng nhảy</button>
               <button class="btn ghost" data-club="clear">🧹 Dọn sàn</button>
               <button class="btn ghost" data-club="camera">🎥 Đổi góc máy</button>

@@ -57,7 +57,7 @@ const DEFAULTS = {
     clubMusic: true,            // phát nhạc nền từ danh sách clubTracks
     clubMusicVolume: 0.6,
     clubTracks: [],             // đường dẫn file nhạc trên máy
-    clubLikeGoal: 300,          // số tim để mưa pháo giấy
+    clubLikeGoal: 300,          // số tim để bắn pháo hoa (kèm sàn vàng, pháo giấy)
     clubMaxDogs: 40,            // số chó tối đa trên sàn
     clubCamera: true,           // tặng quà -> camera lia và áp sát nhân vật của người tặng
     clubCameraSec: 3,           // số giây camera giữ ở người tặng
@@ -69,6 +69,7 @@ const DEFAULTS = {
     clubQuality: 'high',        // high: bloom + phản chiếu sàn; low: nhẹ cho máy yếu
     clubCamAuto: true,          // camera tự đổi góc máy
     clubCamEvery: 12,           // số giây mỗi góc máy
+    clubHaze: 60,               // độ đậm khói mù (%)
     clubPtsLike: 1,             // điểm mỗi tim
     clubLikeCapMin: 60,         // số tim tối đa được tính mỗi phút cho mỗi người (0 = không giới hạn)
     clubPtsCoin: 100,           // điểm mỗi xu của quà
@@ -160,6 +161,7 @@ class Settings {
     o.clubBpm = int(o.clubBpm, 60, 180, 124);
     if (!['high', 'low'].includes(o.clubQuality)) o.clubQuality = 'high';
     o.clubCamEvery = int(o.clubCamEvery, 4, 120, 12);
+    o.clubHaze = int(o.clubHaze, 0, 100, 60);
     o.clubPtsLike = int(o.clubPtsLike, 0, 100000, 1);
     o.clubLikeCapMin = int(o.clubLikeCapMin, 0, 100000, 60);
     o.clubPtsCoin = int(o.clubPtsCoin, 1, 100000, 100);

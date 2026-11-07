@@ -13,8 +13,11 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { W, H, L, TIERS, rnd, pick, clamp } from './layout.js';
 import { LedScreen } from './led.js';
+import { Fireworks } from './fireworks.js';
+import { DjBadge } from './djbadge.js';
 import { World } from './world.js';
 import { Cast } from './cast.js';
 import { Director } from './director.js';
@@ -25,7 +28,6 @@ const PODIUM_EVERY = 2000;
 const RAIN_MS = 15000;
 const DANCE_WORDS = ['nhay', 'quay', 'dance', 'len', 'quay len'];
 const SWAP_WORDS = ['doi', 'doi cho', 'doi nv', 'doi nhan vat', 'doi meme', 'doi con'];
-const CAMERA_WORDS = ['camera', 'cam', 'goc may', 'doi goc'];
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/\s+/g, ' ').trim();
 const fmt = (n) => Number(n || 0).toLocaleString('vi-VN');
@@ -41,8 +43,10 @@ function el(tag, cls, text) {
 
 // ---------------- Tài nguyên mặc định (ghi đè bằng manifest.json) ----------------
 const DEFAULT_ASSETS = {
-  characters: [1, 2, 3, 4].map((i) => ({ file: `characters/dog${i}.gif`, height: 1, faces: 'right' })),
-  dj: { file: 'stage/dj.gif', width: 330 },
+  characters: [
+    { file: 'characters/happy-dance.webp', height: 1.2, faces: 'right', feet: 0.07 }
+  ],
+  dj: { file: '', width: 330 },   // nhân vật DJ mặc định khi chưa có Top 1 (trống = không có; màn LED hiện trái tim mời lên DJ)
   wings: { pair: 'wings/gold-angel-wings.png' },
   crown: 'decor/crown.svg',
   screen: ['screen/space.jpg'],
@@ -64,7 +68,7 @@ async function loadAssets() {
     if (!m || typeof m !== 'object') return a;
     const chars = (Array.isArray(m.characters) ? m.characters : []).map((c) => (typeof c === 'string' ? { file: c } : c))
       .filter((c) => c && safePath(c.file))
-      .map((c) => ({ file: c.file, height: clamp(Number(c.height) || 1, 0.3, 3), faces: c.faces === 'left' ? 'left' : 'right' }));
+      .map((c) => ({ file: c.file, height: clamp(Number(c.height) || 1, 0.3, 3), faces: c.faces === 'left' ? 'left' : 'right', feet: clamp(Number(c.feet) || 0, 0, 0.4) }));
     if (chars.length) a.characters = chars;
     if (m.dj && safePath(m.dj.file)) a.dj = { file: m.dj.file, width: clamp(Number(m.dj.width) || 330, 100, 900) };
     if (m.wings && typeof m.wings === 'object') {
@@ -104,6 +108,82 @@ let assets;
 let renderer;
 let composer;
 let cssRenderer;
+let fireworks;
+let djBadge;
+let bloom;
+// Tự giảm chất lượng khi máy không theo kịp (thường do quá đông người trên sàn):
+// mức 1 tắt phản chiếu sàn (tốn nhất), mức 2 tắt phát sáng lan, mức 3–4 bớt số nhân vật trên sàn (28, rồi 20)
+// vì mỗi nhân vật là một lớp hình riêng, đông người là thứ nặng nhất. Chỉ giảm, không tự tăng lại trong phiên.
+const perf = { frames: 0, since: 0, slow: 0, level: 0, fps: 0 };
+function watchPerf(rt) {
+  perf.frames++;
+  if (!perf.since) { perf.since = rt; return; }
+  const span = rt - perf.since;
+  if (span < 4000) return;
+  if (span > 8000) { perf.frames = 0; perf.since = rt; return; }   // vừa tạm dừng / ẩn cửa sổ: bỏ qua lần đo này
+  perf.fps = (perf.frames * 1000) / span;
+  perf.frames = 0;
+  perf.since = rt;
+  if (document.hidden || paused || rt - clockStart < 12000 || perf.level >= 4) return;
+  perf.slow = perf.fps < 21 ? perf.slow + 1 : 0;
+  if (perf.slow < 2) return;
+  perf.slow = 0;
+  perf.level++;
+  if (perf.level === 1 && world.reflector) world.reflector.visible = false;
+  if (perf.level >= 1) ui.root.classList.add('c3-lite');   // làm mờ người khác bằng độ trong thay vì nhoè (rẻ hơn nhiều)
+  if (perf.level === 2 && bloom) bloom.enabled = false;
+  if (perf.level >= 3) {
+    cast.capOverride = perf.level === 3 ? 28 : 20;
+    cast.trimTo(cast.capOverride, director.focus?.dog);
+  }
+  console.info('[club] máy không theo kịp (' + perf.fps.toFixed(1) + ' khung/giây): tự giảm chất lượng, mức ' + perf.level);
+}
+let lens;              // nhoè ống kính quanh người được quay (chỉ chất lượng cao)
+let focused = null;    // nhân vật camera đang áp sát
+let focusAmt = 0;      // 0 → 1 độ đậm hiệu ứng áp sát
+let focusC = { x: W / 2, y: H / 2, r: 400 };
+let vigKey = '';
+// nhoè + tối + nhạt màu dần ra xa tâm (người được quay); vùng tròn quanh người đó giữ nguyên nét
+const LensShader = {
+  uniforms: { tDiffuse: { value: null }, uCenter: { value: new THREE.Vector2(0.5, 0.5) }, uRadius: { value: 0.2 }, uAmount: { value: 0 }, uAspect: { value: W / H },
+    uTime: { value: 0 }, uHaze: { value: 0 }, uTint: { value: new THREE.Color(0.55, 0.45, 0.85) } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 uCenter; uniform float uRadius, uAmount, uAspect, uTime, uHaze; uniform vec3 uTint; varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float vnoise(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
+    float fbm(vec2 p){ float v = 0.0; float a = 0.5; for (int i = 0; i < 3; i++) { v += a * vnoise(p); p *= 2.03; a *= 0.5; } return v; }
+    void main(){
+      vec4 base = texture2D(tDiffuse, vUv);
+      vec3 col = base.rgb;
+      // ống kính khi áp sát: nhoè + tối + nhạt màu dần ra xa người được quay
+      if (uAmount > 0.003) {
+        vec2 dv = (vUv - uCenter) * vec2(uAspect, 1.0);
+        float k = smoothstep(uRadius, uRadius * 2.4, length(dv)) * uAmount;
+        vec3 acc = col; float n = 1.0; float r = k * 0.013;
+        for (int i = 0; i < 14; i++) {
+          float a = float(i) * 2.39996; float rr = r * sqrt((float(i) + 0.5) / 14.0);
+          acc += texture2D(tDiffuse, vUv + vec2(cos(a), sin(a) * uAspect) * rr).rgb; n += 1.0;
+        }
+        col = acc / n;
+        float l = dot(col, vec3(0.299, 0.587, 0.114));
+        col = mix(col, vec3(l), k * 0.45) * (1.0 - k * 0.55);
+      }
+      // khói mù: mảng khói trôi chậm, sáng lên theo ánh đèn xung quanh (như khói tán xạ ánh sáng trong club)
+      if (uHaze > 0.001) {
+        vec2 q = vec2(vUv.x * uAspect, vUv.y) * 2.4;
+        float s = fbm(q + vec2(uTime * 0.03, -uTime * 0.018)) * 0.65 + fbm(q * 1.8 - vec2(uTime * 0.045, uTime * 0.01)) * 0.35;
+        vec3 glow = vec3(0.0);
+        for (int i = 0; i < 6; i++) { float a = float(i) * 1.0472 + 0.4; glow += texture2D(tDiffuse, vUv + vec2(cos(a), sin(a) * uAspect) * 0.075).rgb; }
+        glow /= 6.0;
+        float lum = dot(glow, vec3(0.299, 0.587, 0.114));
+        vec3 smoke = mix(uTint, glow, 0.7) * smoothstep(0.28, 0.82, s);
+        col += smoke * uHaze * (0.16 + lum * 0.9);
+        col = mix(col, col * 0.94 + uTint * 0.03, uHaze * 0.7);
+      }
+      gl_FragColor = vec4(col, base.a);
+    }`
+};
 let camera;
 let world;
 let cast;
@@ -193,9 +273,37 @@ function buildHud() {
   row('👑', 'Cao nhất làm DJ', 'emo');
   row('nhảy', 'quẩy lên');
   row('đổi', 'đổi nhân vật');
-  row('camera', 'đổi góc máy');
-  root.append(head, board, legend);
+  // bảng tên kiểu truyền hình khi camera áp sát (quà, DJ mới)
+  els.cap = el('div', 'c-cap');
+  els.capAv = el('img', 'c-cap-av');
+  els.capAv.referrerPolicy = 'no-referrer';
+  els.capAv.alt = '';
+  const capTxt = el('div', 'c-cap-txt');
+  els.capTitle = el('div', 'c-cap-title');
+  els.capName = el('div', 'c-cap-name');
+  els.capSub = el('div', 'c-cap-sub');
+  capTxt.append(els.capTitle, els.capName, els.capSub);
+  els.cap.append(els.capAv, capTxt);
+  root.append(head, board, legend, els.cap);
 }
+
+let capTimer = 0;
+function showCaption({ title, name, sub, avatar, tone = 'gift', ms = 3500 }) {
+  const c = els.cap;
+  if (!c) return;
+  els.capTitle.textContent = title;
+  els.capName.textContent = name;
+  els.capSub.textContent = sub || '';
+  const src = typeof avatar === 'string' && (avatar.startsWith('https://') || avatar.startsWith('/club-demo-avatar/')) ? avatar : '';
+  els.capAv.style.display = src ? '' : 'none';
+  if (src) els.capAv.src = src;
+  c.className = 'c-cap ' + tone;
+  void c.offsetWidth;
+  c.classList.add('on');
+  clearTimeout(capTimer);
+  capTimer = setTimeout(() => c.classList.remove('on'), Math.max(1800, ms - 300));
+}
+function hideCaption() { clearTimeout(capTimer); els.cap?.classList.remove('on'); }
 
 const clubName = () => (cfg.clubName || '').trim() || 'DJ CLUB';
 function updateTexts() {
@@ -237,9 +345,17 @@ function burstAt(v, n) {
     const sp = rnd(4, 16);
     confetti.push(piece(x, y, Math.cos(a) * sp, Math.sin(a) * sp - 8));
   }
-  if (confetti.length > 900) confetti.splice(0, confetti.length - 900);
+  const cap = perf.level >= 2 ? 320 : 900;   // máy đang chậm: ít mảnh pháo giấy hơn
+  if (confetti.length > cap) confetti.splice(0, confetti.length - cap);
 }
+let fxDirty = false;
 function drawConfetti(dt) {
+  // không có pháo giấy: khỏi xoá / vẽ lại lớp 1080×1920 mỗi khung (đỡ tốn GPU)
+  if (!confetti.length && performance.now() >= rainUntil) {
+    if (fxDirty) { fxg.clearRect(0, 0, W, H); fxDirty = false; }
+    return;
+  }
+  fxDirty = true;
   fxg.clearRect(0, 0, W, H);
   if (performance.now() < rainUntil && confetti.length < 600) for (let i = 0; i < 6; i++) confetti.push(piece(rnd(0, W), rnd(150, 240), rnd(-1, 1), rnd(3, 7)));
   for (let i = confetti.length - 1; i >= 0; i--) {
@@ -262,11 +378,23 @@ function drawConfetti(dt) {
 }
 
 // ---------------- Nhân vật ----------------
+// Phòng đông (tim, bình luận dồn dập từ nhiều người): mỗi giây chỉ cho ~4 người mới bước lên sàn (dồn tối đa 8),
+// để sàn không liên tục thêm / bớt nhân vật làm giật hình. Người tặng quà luôn được lên ngay (create = 'force').
+const spawnBucket = { tokens: 8, at: performance.now() };
+function canSpawn() {
+  const now = performance.now();
+  spawnBucket.tokens = Math.min(8, spawnBucket.tokens + (now - spawnBucket.at) / 250);
+  spawnBucket.at = now;
+  if (spawnBucket.tokens < 1) return false;
+  spawnBucket.tokens -= 1;
+  return true;
+}
+
 function getDog(user, create = true) {
   const k = keyOf(user);
   if (!k || !ready) return null;
   let d = cast.get(k);
-  if (!d && create) d = cast.spawn(k, user, director.focus?.dog);
+  if (!d && create && (create === 'force' || canSpawn())) d = cast.spawn(k, user, director.focus?.dog);
   if (d) {
     d.active = Date.now();
     if (user?.avatar) cast.setAvatar(d, user.avatar);
@@ -274,9 +402,62 @@ function getDog(user, create = true) {
   return d;
 }
 
-function focusDog(d, ms, force = false) {
+// caption: bảng tên hiện khi camera THỰC SỰ chuyển sang người này (không hiện ngay lúc có quà, tránh lệch người)
+function focusDog(d, ms, force = false, caption = null, prio = 0) {
   if (cfg.clubCamera === false || !d) return;
-  director.focusOn(() => (cast.get(d.key) === d ? cast.headPos(d) : null), ms, force, d);
+  director.focusOn(() => (cast.get(d.key) === d ? cast.headPos(d) : null), ms, force, d, caption, prio);
+}
+
+// hiệu ứng áp sát: làm mờ người khác, nhoè ống kính, tối viền, đèn rọi theo
+function updateFocus(dt) {
+  const f = director.focus;
+  let d = f && f.dog && cast.get(f.dog.key) === f.dog ? f.dog : null;
+  // tour DJ (không có quà chen ngang): lần lượt "giới thiệu" DJ → Top 2 → Top 3 → Top 4
+  let tourSlot = 0;
+  if (!d && director.tourKey != null) {
+    tourSlot = [1, 2, 3, 4][director.tourKey] || 0;
+    d = tourSlot ? [...cast.dogs.values()].find((x) => x.slot === tourSlot) || null : null;
+  }
+  if (d !== focused) {
+    if (d) sfx.play('whoosh');
+    focused = d;
+    cast.setFocus(d);
+    if (!d) hideCaption();
+    if (d && tourSlot) {
+      const T = { 1: ['👑 DJ ĐANG CHƠI NHẠC', 'dj'], 2: ['🥇 TOP 2', 'big'], 3: ['🥈 TOP 3', 'silver'], 4: ['🥉 TOP 4', 'bronze'] }[tourSlot];
+      showCaption({ title: T[0], name: d.name, sub: fmt(d.points || 0) + ' điểm', avatar: d.avatarUrl, tone: T[1], ms: 1900 });
+    }
+  }
+  // bảng tên: khi đổi người hoặc người đó tặng tiếp (cập nhật quà mới)
+  if (d && f && f.dog === d && f.meta && f.metaAt !== updateFocus.metaAt) {
+    updateFocus.metaAt = f.metaAt;
+    showCaption({ name: d.name, avatar: d.avatarUrl, ms: Math.max(1500, f.until - performance.now()), ...f.meta });
+  }
+  focusAmt += ((d ? 1 : 0) - focusAmt) * Math.min(1, dt * 3.5);
+  if (d) {
+    const head = screenOf(cast.headPos(d));
+    const feet = screenOf(cast.feetPos(d));
+    const r = clamp(Math.abs(feet.y - head.y) * 1.25, 200, 820);
+    focusC = { x: head.x, y: (head.y + feet.y) / 2, r };
+  }
+  const c = focusC;
+  if (lens) {
+    lens.uniforms.uAmount.value = focusAmt;
+    // khói mù (cài đặt %, máy chậm thì giảm còn một nửa)
+    lens.uniforms.uHaze.value = clamp(Number(cfg.clubHaze ?? 60), 0, 100) / 100 * (perf.level >= 2 ? 0.5 : 1);
+    lens.uniforms.uTime.value = performance.now() / 1000;
+    lens.uniforms.uCenter.value.set(c.x / W, 1 - c.y / H);
+    lens.uniforms.uRadius.value = (c.r / H) * 0.85;
+  }
+  // tối viền ngoài (cả lớp nhân vật); chỉ vẽ lại khi đổi đủ nhiều cho đỡ tốn máy
+  const off = focusAmt < 0.01;
+  const key = off ? 'off' : [Math.round(c.x / 6), Math.round(c.y / 6), Math.round(c.r / 8), Math.round(focusAmt * 20)].join('|');
+  if (key !== vigKey) {
+    vigKey = key;
+    els.vig.style.opacity = off ? '0' : (focusAmt * 0.9).toFixed(2);
+    if (!off) els.vig.style.background = 'radial-gradient(circle at ' + c.x.toFixed(0) + 'px ' + c.y.toFixed(0) + 'px, rgba(4,0,14,0) ' + (c.r * 0.8).toFixed(0) + 'px, rgba(4,0,14,.6) ' + (c.r * 2.4).toFixed(0) + 'px)';
+  }
+  world.setFollow(d ? cast.feetPos(d) : null, focusAmt);
 }
 
 // ---------------- Bục TOP ----------------
@@ -315,17 +496,19 @@ function applyPodium() {
   cast.setDjVisible(!top1);
   const dj = top1 ? cast.get(top1) : null;
   led.setDj(dj ? { img: dj.img, name: dj.name } : null);
+  djBadge.setDj(dj ? { name: dj.name, avatar: dj.avatarUrl || rank[0]?.avatar || '' } : null);
   if (!rankReady) rankReady = true;
   else if (top1 && top1 !== lastTop1) announceTop1(dj);
   lastTop1 = top1;
   updateTexts();
   world.setOccupied(Object.fromEntries([...want.values()].map(({ slot }) => [slot, true])));
+  director.tops = want.size;
 }
 
 function announceTop1(d) {
   if (!d || !enabled) return;
   led.message({ title: '👑 TOP 1 MỚI', line: d.name, sub: 'lên làm DJ!', color: '#d8b4fe', ms: 5000, priority: true });
-  focusDog(d, (clamp(Number(cfg.clubCameraSec) || 3, 1, 10) + 2) * 1000, true);
+  focusDog(d, (clamp(Number(cfg.clubCameraSec) || 3, 1, 10) + 2) * 1000, true, { title: '👑 DJ MỚI LÊN SÀN', sub: fmt(d.points || 0) + ' điểm', tone: 'dj' }, 1e9);
   setTimeout(() => burstAt(cast.headPos(d), 160), 900);
   sfx.play('applause');
 }
@@ -351,7 +534,6 @@ function onEvent(ev) {
       const w = norm(ev.text);
       if (SWAP_WORDS.includes(w)) { cast.swapChar(d); burstAt(cast.headPos(d), 24); sfx.play('pop'); return; }
       if (DANCE_WORDS.includes(w)) { cast.dance(d, 5000); cast.say(d, '💃🕺'); return; }
-      if (CAMERA_WORDS.includes(w)) { director.nextShot(); cast.say(d, '🎥 đổi góc máy'); return; }
       cast.say(d, ev.text);
       return;
     }
@@ -376,7 +558,7 @@ function onEvent(ev) {
 }
 
 function onGift(ev) {
-  const d = getDog(ev.user);
+  const d = getDog(ev.user, 'force');
   if (!d) return;
   const total = Number(ev.total || 0);
   const gift = `${ev.giftName || 'Quà'}${ev.repeatCount > 1 ? ' x' + ev.repeatCount : ''}`;
@@ -389,8 +571,8 @@ function onGift(ev) {
     d.run = true;
     d.busyUntil = Date.now() + 6000;
   }
-  focusDog(d, clamp(Number(cfg.clubCameraSec) || 3, 1, 10) * 1000);
   const big = Number(cfg.bigGiftDiamonds || 30) > 0 && total >= Number(cfg.bigGiftDiamonds || 30);
+  focusDog(d, clamp(Number(cfg.clubCameraSec) || 3, 1, 10) * 1000, false, { title: big ? '💎 ĐẠI GIA TẶNG QUÀ' : '🎁 TẶNG QUÀ', sub: gift, tone: big ? 'big' : 'gift' }, total);
   world.ripple(d.slot ? d.tx : d.x, d.slot ? d.tz : d.z, big ? 0.14 : 0.9);
   setTimeout(() => burstAt(cast.headPos(d), big ? 200 : 80), 500);
   led.message({ title: big ? '💎 CẢM ƠN ĐẠI GIA' : '🎁 CẢM ƠN', line: d.name, sub: 'đã tặng ' + gift, color: big ? '#fde047' : '#f9a8d4', ms: big ? 5000 : 3500 });
@@ -400,7 +582,7 @@ function onGift(ev) {
   sfx.play(big ? 'applause' : 'chime');
 }
 
-// ---------------- Tim & mưa pháo giấy ----------------
+// ---------------- Tim & pháo hoa ----------------
 const goal = () => Math.max(10, Math.round(cfg.clubLikeGoal || 300));
 function onStats(s) {
   if (!enabled || !s) return;
@@ -418,12 +600,19 @@ function updateLikeBar() {
   const raining = performance.now() < rainUntil;
   els.likeFill.style.width = (raining ? 100 : clamp((likeCount / goal()) * 100, 0, 100)) + '%';
   els.likeText.textContent = raining
-    ? '🎉 Mưa pháo giấy — cảm ơn cả nhà đã thả tim!'
-    : `❤️ ${fmt(Math.max(0, likeCount))}/${fmt(goal())} tim — đủ tim sẽ mưa pháo giấy`;
+    ? '🎆 Bắn pháo hoa — cảm ơn cả nhà đã thả tim!'
+    : `❤️ ${fmt(Math.max(0, likeCount))}/${fmt(goal())} tim — đủ tim sẽ bắn pháo hoa`;
 }
+// đủ tim: pháo hoa sau sân khấu + sàn vàng rực + mưa pháo giấy + cả sàn nhảy
 function startRain() {
   rainUntil = performance.now() + RAIN_MS;
-  if (ready) for (const d of cast.dogs.values()) cast.dance(d, RAIN_MS);
+  if (ready) {
+    for (const d of cast.dogs.values()) cast.dance(d, RAIN_MS);
+    fireworks.show(RAIN_MS - 2500);
+    world.celebrate(RAIN_MS - 1000);
+    director.hold('sky', RAIN_MS - 2000);
+    led.message({ title: '🎆 ĐỦ ' + fmt(goal()) + ' TIM!', line: 'Cảm ơn cả nhà', sub: 'bắn pháo hoa nào!', color: '#fde047', ms: 6000, priority: true });
+  }
   sfx.play('applause');
   updateLikeBar();
 }
@@ -438,7 +627,7 @@ function command(c) {
     case 'crowd':
       for (let i = 0; i < (Number(c.n) || 10); i++) {
         const name = pick(DEMO) + ' ' + Math.floor(rnd(1, 99));
-        setTimeout(() => getDog({ id: 'demo-' + name, nickname: name }), i * 200);
+        setTimeout(() => getDog({ id: 'demo-' + name, nickname: name, avatar: '/club-demo-avatar/' + Math.floor(rnd(0, 12)) + '.svg' }, 'force'), i * 200);
       }
       break;
     case 'clear': for (const d of [...cast.dogs.values()]) if (!d.slot) cast.remove(d); break;
@@ -456,6 +645,7 @@ function loop(rt) {
   if (!enabled || paused || !ready) return;
   requestAnimationFrame(loop);
   if (rt - last < FRAME_MS - 2) return;
+  watchPerf(rt);
   const dtMs = Math.min(250, rt - last);
   last = rt;
   const dt = dtMs / 1000;
@@ -465,8 +655,12 @@ function loop(rt) {
   const pulse = Math.exp(-(beat % 1) * 5);
   director.update(dt, { auto: cfg.clubCamAuto !== false, every: clamp(Number(cfg.clubCamEvery) || 12, 4, 120) });
   led.render(t, rt, pulse);
+  world.setHaze(clamp(Number(cfg.clubHaze ?? 60), 0, 100) / 100);
   world.update(t, beat, pulse);
+  fireworks.update(dt);
+  djBadge.update(t, pulse, !!led.msg && rt < led.msgUntil);
   cast.update(dt, camera);
+  updateFocus(dt);
   if (composer) composer.render(); else renderer.render(world.scene, camera);
   cssRenderer.render(cssScene, camera);
   drawConfetti(dtMs / FRAME_MS);
@@ -491,12 +685,19 @@ async function setup() {
   camera = new THREE.PerspectiveCamera(58, W / H, 10, 40000);
   led = new LedScreen();
   world = new World({ quality, assets, led });
+  fireworks = new Fireworks(world.scene, { quality, fov: 58, height: H });
+  djBadge = new DjBadge(world.scene);
+  fireworks.onBoom = (type) => sfx.play('fwBoom', type === 'willow' || type === 'heart' ? 1.2 : 1);
+  fireworks.onLaunch = () => sfx.play('fwLaunch');
   if (quality !== 'low') {
     composer = new EffectComposer(renderer);
     composer.setPixelRatio(1);
     composer.setSize(W, H);
     composer.addPass(new RenderPass(world.scene, camera));
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(W / 2, H / 2), 0.55, 0.4, 0.82));
+    bloom = new UnrealBloomPass(new THREE.Vector2(W / 2, H / 2), 0.55, 0.4, 0.82);
+    composer.addPass(bloom);
+    lens = new ShaderPass(LensShader);
+    composer.addPass(lens);
     composer.addPass(new OutputPass());
   }
   cssRenderer = new CSS3DRenderer();
@@ -507,13 +708,15 @@ async function setup() {
   cast = new Cast({ scene: cssScene, assets, getCfg: () => cfg });
   cast.applyAssets();
   director = new Director(camera);
+  els.vig = el('div', 'c3-vig');
+  cssRenderer.domElement.after(els.vig);
   fx = el('canvas', 'c3-fx');
   fx.width = W;
   fx.height = H;
   fxg = fx.getContext('2d');
   cssRenderer.domElement.after(fx);
   ready = true;
-  window.__club = { world, camera, director, cast, THREE };   // để gỡ lỗi / chỉnh thử trong DevTools
+  window.__club = { world, camera, director, cast, fireworks, perf, THREE };   // để gỡ lỗi / chỉnh thử trong DevTools
   updatePlaylist();
   updateTexts();
   updateLikeBar();

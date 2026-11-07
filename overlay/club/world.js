@@ -33,6 +33,32 @@ function radialTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+// mây khói liền mép (lát kín khi lặp lại): nhiều đốm mờ, vẽ lặp qua mép để không lộ đường nối
+function cloudTexture(size = 256, blobs = 70) {
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const g = c.getContext('2d');
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < blobs; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = size * (0.08 + Math.random() * 0.22);
+    const a = 0.05 + Math.random() * 0.12;
+    for (const ox of [-size, 0, size]) {
+      for (const oy of [-size, 0, size]) {
+        const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+        gr.addColorStop(0, `rgba(255,255,255,${a})`);
+        gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr;
+        g.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+      }
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
 function labelTexture(text, color) {
   const c = Object.assign(document.createElement('canvas'), { width: 128, height: 128 });
   const g = c.getContext('2d');
@@ -85,7 +111,69 @@ export class World {
     this.buildLasers();
     this.buildPillars();
     this.buildFrontLights();
+    this.buildHaze();
   }
+
+  // Khói mù club: sương lan sát sàn (2–3 lớp trôi ngược chiều), một màn khói mỏng giữa đám đông và sân khấu,
+  // bụi sáng lơ lửng bắt ánh đèn. Màu khói đổi theo màu đèn, đậm nhạt theo nhịp nhạc.
+  buildHaze() {
+    const base = cloudTexture();
+    const low = this.quality === 'low';
+    this.haze = { layers: [], amount: 0.6 };
+    const add = (geo, place, opacity, speed, repeat) => {
+      const tex = base.clone();
+      tex.needsUpdate = true;
+      tex.repeat.set(...repeat);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, color: 0xd9ccff, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+      const m = new THREE.Mesh(geo, mat);
+      place(m);
+      m.renderOrder = 3;
+      this.scene.add(m);
+      this.haze.layers.push({ m, tex, base: opacity, speed });
+    };
+    // sương sát sàn (khói đá khô)
+    const floorLayers = low ? [[20, 0.12]] : [[16, 0.12], [55, 0.085], [120, 0.05]];
+    floorLayers.forEach(([y, op], i) => add(new THREE.PlaneGeometry(3400, 2400), (m) => { m.rotation.x = -Math.PI / 2; m.position.set(0, y, 550); }, op,
+      [(i % 2 ? -1 : 1) * (0.006 + i * 0.003), 0.004 + i * 0.002], [2.2 + i * 0.4, 1.6 + i * 0.3]));
+    // màn khói mỏng đứng giữa đám đông và sân khấu: nhìn sân khấu như qua làn khói
+    if (!low) {
+      add(new THREE.PlaneGeometry(2600, 1100), (m) => { m.position.set(0, 520, -130); }, 0.07, [0.004, -0.002], [1.6, 0.8]);
+    }
+    // bụi sáng lơ lửng
+    const n = low ? 120 : 280;
+    const pos = new Float32Array(n * 3);
+    const ph = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = rnd(-1050, 1050);
+      pos[i * 3 + 1] = rnd(40, 820);
+      pos[i * 3 + 2] = rnd(-650, 1150);
+      ph[i] = Math.random() * 100;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aPh', new THREE.BufferAttribute(ph, 1));
+    this.dustMat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uAmount: { value: 1 } },
+      vertexShader: `attribute float aPh; uniform float uTime; varying float vA;
+        void main(){ vec3 p = position;
+          p.x += sin(uTime * 0.11 + aPh) * 60.0; p.y += sin(uTime * 0.07 + aPh * 1.7) * 45.0; p.z += cos(uTime * 0.09 + aPh * 0.6) * 60.0;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = clamp(5.0 * 1700.0 / -mv.z, 1.0, 9.0);
+          vA = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(uTime * (0.8 + fract(aPh) * 1.6) + aPh * 3.0), 3.0);
+          gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `uniform float uAmount; varying float vA;
+        void main(){ float d = length(gl_PointCoord - 0.5) * 2.0; float a = (1.0 - smoothstep(0.0, 1.0, d)) * vA * uAmount;
+          gl_FragColor = vec4(vec3(1.0, 0.95, 0.9) * a * 1.6, 1.0); ${OUT} }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    const dust = new THREE.Points(geo, this.dustMat);
+    dust.frustumCulled = false;
+    dust.renderOrder = 3;
+    this.scene.add(dust);
+  }
+
+  // độ đậm khói 0–1 (cài đặt trong tab DJ Club)
+  setHaze(amount) { if (this.haze) this.haze.amount = Math.max(0, Math.min(1, amount)); }
 
   model(key, cb) {
     const def = this.assets.models?.[key];
@@ -167,11 +255,11 @@ export class World {
     this.floorMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 }, uBeat: { value: 0 }, uPulse: { value: 0 }, uMode: { value: 0 }, uTile: { value: f.tile },
-        uRip: { value: this.ripples }
+        uRip: { value: this.ripples }, uGold: { value: 0 }, uGoldT: { value: 0 }
       },
       vertexShader: `varying vec3 vPos; void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vPos = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
       fragmentShader: `
-        uniform float uTime, uBeat, uPulse, uMode, uTile; uniform vec4 uRip[4]; varying vec3 vPos;
+        uniform float uTime, uBeat, uPulse, uMode, uTile, uGold, uGoldT; uniform vec4 uRip[4]; varying vec3 vPos;
         ${HSV}
         float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         void main(){
@@ -196,6 +284,20 @@ export class World {
           on = max(on, 0.06);
           float fade = 1.0 - smoothstep(1000.0, 1500.0, abs(vPos.x));
           vec3 col = hsv2rgb(vec3(hue, 0.85, 1.0)) * on * 1.15 * grout * fade;
+          // ăn mừng đủ tim: sàn chuyển vàng rực, lan ra từng ô một từ giữa, ô vừa đổi màu loé sáng
+          if (uGold > 0.001) {
+            float dg = length(id - vec2(-0.5, -1.0));   // lan từ mép sân khấu ra phía khán giả
+            float reach = uGoldT * 4.0;
+            float lit = 1.0 - smoothstep(reach - 0.6, reach + 0.6, dg);
+            float pop = exp(-max(0.0, reach - dg) * 1.1) * lit;
+            float h = hash(id * 1.7 + 3.1);
+            float shimmer = 0.62 + 0.38 * sin(uTime * 5.0 + h * 6.2832);
+            float chk = mod(id.x + id.y + floor(uBeat), 2.0) > 0.5 ? 1.0 : 0.7;
+            float spark = step(0.975, hash(id + floor(uTime * 8.0))) * 1.6;
+            vec3 gold = mix(vec3(1.0, 0.42, 0.02), vec3(1.0, 0.7, 0.16), h);
+            vec3 g = gold * (shimmer * chk * 0.72 + pop * 1.7 + spark) * grout + vec3(1.0, 0.6, 0.1) * (1.0 - grout) * 0.55;
+            col = mix(col, g * fade, uGold * lit);
+          }
           float sweep = exp(-pow((vPos.x + vPos.z * 0.6) - (mod(uTime * 260.0, 4400.0) - 2200.0), 2.0) / 50000.0) * 0.07;
           gl_FragColor = vec4(vec3(0.014, 0.006, 0.035) + col + sweep, 1.0);
           ${OUT}
@@ -468,21 +570,82 @@ export class World {
 
   setOccupied(occ) { this.occupied = occ || {}; }
 
+  // đèn rọi theo (follow spot): luồng sáng trắng ấm từ trên cao phía trước + vòng sáng dưới chân người được quay
+  buildFollowSpot() {
+    const cone = this.beamMesh(1, 8, 95);
+    cone.material = cone.material.clone();
+    cone.material.color.set(0xfff1d2);
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(135, 48), new THREE.MeshBasicMaterial({
+      map: radialTexture(), color: 0xfff0c8, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0
+    }));
+    pool.rotation.x = -Math.PI / 2;
+    cone.visible = pool.visible = false;
+    this.scene.add(cone, pool);
+    this.follow = { cone, pool, last: new THREE.Vector3() };
+  }
+
+  setFollow(target, amt) {
+    if (!this.follow) this.buildFollowSpot();
+    const { cone, pool, last } = this.follow;
+    if (target) last.copy(target);
+    const on = amt > 0.01;
+    cone.visible = pool.visible = on;
+    if (!on) return;
+    const p = last;
+    pool.position.set(p.x, p.y + 1.5, p.z);
+    pool.scale.setScalar(0.85 + amt * 0.15);
+    const from = new THREE.Vector3(p.x * 0.4, 1150, p.z + 260);
+    const dir = from.clone().sub(p);
+    const len = dir.length();
+    cone.position.copy(from);
+    cone.scale.set(1, len, 1);
+    cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    cone.material.opacity = 0.3 * amt;
+    pool.material.opacity = 0.95 * amt;
+  }
+
+  // sàn vàng + đèn ánh vàng trong ms mili giây (đủ tim)
+  celebrate(ms) {
+    if (!(this.goldUntil > this.t)) this.goldStart = this.t;
+    this.goldUntil = this.t + ms / 1000;
+  }
+
   update(t, beat, pulse) {
     this.t = t;
+    if (this.haze) {
+      // khói trôi chậm, nhuốm màu đèn (vàng khi đang ăn mừng đủ tim), dày lên nhẹ theo nhịp
+      const hz = this.haze;
+      const tint = new THREE.Color().setHSL((t * 0.05 + 0.65) % 1, 0.65, 0.62);
+      if (this.goldUntil > t) tint.lerp(new THREE.Color(1, 0.8, 0.45), 0.7);
+      for (const L2 of hz.layers) {
+        L2.tex.offset.set(t * L2.speed[0], t * L2.speed[1]);
+        L2.m.material.color.copy(tint);
+        L2.m.material.opacity = L2.base * hz.amount * 1.6 * (0.88 + pulse * 0.24);
+        L2.m.visible = hz.amount > 0.01;
+      }
+      this.dustMat.uniforms.uTime.value = t;
+      this.dustMat.uniforms.uAmount.value = Math.min(1, hz.amount * 1.6);
+    }
     const u = this.floorMat.uniforms;
     u.uTime.value = t;
     u.uBeat.value = beat;
     u.uPulse.value = pulse;
     u.uMode.value = Math.floor(t / 12) % 6;
+    // độ vàng: bật nhanh, tắt dần 1,5 giây cuối
+    const gold = this.goldUntil > t ? Math.min(1, (t - this.goldStart) / 0.3) * Math.min(1, (this.goldUntil - t) / 1.5) : 0;
+    u.uGold.value = gold;
+    u.uGoldT.value = gold > 0 ? t - this.goldStart : 0;
+    const GOLD = new THREE.Color(1, 0.72, 0.2);
     this.ledTex.needsUpdate = true;
     this.pillarMat.uniforms.uTime.value = t;
     this.pillarMat.uniforms.uPulse.value = pulse;
 
     const hue = (t * 0.05) % 1;
     const edgeCol = new THREE.Color().setHSL(hue, 1, 0.6).multiplyScalar(1.8 + pulse);
+    if (gold) edgeCol.lerp(GOLD.clone().multiplyScalar(2.4 + pulse), gold);
     this.edgeMat.color.copy(edgeCol);
     this.deskEdge.color.setHSL((hue + 0.5) % 1, 1, 0.6);
+    if (gold) this.deskEdge.color.lerp(GOLD, gold);
     for (const m of this.glowMats) m.emissive.setHSL((hue + 0.25) % 1, 1, 0.6);
 
     // bục: vòng sáng mạnh hơn khi có người đứng
@@ -501,6 +664,7 @@ export class World {
       const tilt = -(2.65 + Math.sin(t * 0.9 + b.phase * 1.3) * 0.3);   // hướng lên trời, hơi nghiêng ra trước
       b.pivot.rotation.set(tilt, yaw, 0, 'YXZ');
       b.beam.material.color.setHSL(((bar * 0.17) + b.phase * 0.1) % 1, 1, 0.6);
+      if (gold) b.beam.material.color.lerp(GOLD, gold);
       b.beam.material.opacity = 0.12 + pulse * 0.1;
     }
 
@@ -522,7 +686,7 @@ export class World {
 
     // laser: quạt mở ra khép lại, bật theo nhịp
     const laserOn = (Math.floor(beat / 4) % 4) !== 3;
-    this.laserMat.color.setHSL([0.33, 0.15, 0.85, 0.5][bar % 4], 1, 0.6).multiplyScalar(3);
+    this.laserMat.color.setHSL(gold > 0.5 ? 0.12 : [0.33, 0.15, 0.85, 0.5][bar % 4], 1, 0.6).multiplyScalar(3);
     for (const l of this.lasers) {
       l.m.visible = laserOn && (!l.back || bar % 2 === 1);
       if (!l.m.visible) continue;
@@ -539,7 +703,7 @@ export class World {
     const c = new THREE.Color();
     for (let i = 0; i < n; i++) {
       const on = (i === head || i === n - 1 - head) ? 2.4 : 0.35 + pulse * 0.4;
-      c.setHSL((i / n + t * 0.1) % 1, 0.9, 0.6).multiplyScalar(on);
+      c.setHSL(gold > 0.5 ? 0.11 + (i % 2) * 0.03 : (i / n + t * 0.1) % 1, 0.9, 0.6).multiplyScalar(on);
       this.frontLights.setColorAt(i, c);
     }
     this.frontLights.instanceColor.needsUpdate = true;

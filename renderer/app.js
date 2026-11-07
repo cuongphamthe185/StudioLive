@@ -855,6 +855,7 @@
     $('#v-clubCameraSec').textContent = o.clubCameraSec + ' giây';
     $('#v-clubBpm').textContent = o.clubBpm + ' nhịp/phút';
     $('#v-clubCamEvery').textContent = o.clubCamEvery + ' giây';
+    $('#v-clubHaze').textContent = (o.clubHaze ?? 60) + '%';
     $$('#club-quality button').forEach((b) => b.classList.toggle('active', b.dataset.q === (o.clubQuality || 'high')));
     $('#v-clubScreenSec').textContent = o.clubScreenSec + ' giây';
     if (document.activeElement !== $('#club-headline')) $('#club-headline').value = o.clubHeadline || '';

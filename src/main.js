@@ -383,7 +383,7 @@ ipcMain.handle('chua:command', (_e, c) => {
   return true;
 });
 
-// Lệnh điều khiển cảnh DJ Club: mưa pháo giấy, cả sàn nhảy, thêm chó thử, chuyển bài…
+// Lệnh điều khiển cảnh DJ Club: bắn pháo hoa, cả sàn nhảy, thêm chó thử, chuyển bài…
 ipcMain.handle('club:resetScore', () => {
   clubScore.reset();
   return true;
@@ -470,7 +470,8 @@ const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function demoEvent(type) {
   const nickname = rand(DEMO_NAMES);
-  const user = { id: 'demo-' + nickname, uniqueId: 'demo' + DEMO_NAMES.indexOf(nickname), nickname, avatar: '' };
+  // ảnh đại diện giả (chỉ DJ Club dùng; cảnh khác chỉ nhận ảnh https nên bỏ qua)
+  const user = { id: 'demo-' + nickname, uniqueId: 'demo' + DEMO_NAMES.indexOf(nickname), nickname, avatar: '/club-demo-avatar/' + DEMO_NAMES.indexOf(nickname) + '.svg' };
   const ts = Date.now();
   switch (type) {
     case 'chat': return { type: 'chat', user, text: rand(DEMO_CHATS), ts };

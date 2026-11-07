@@ -22,3 +22,8 @@ npm-debug.log*
 # Ghi chú cá nhân, không đưa lên git
 ideals/
 pending-notes/
+
+# Ghi chú riêng giữa người dùng và Claude (thiết kế, demo) — không đưa lên git
+**/integration/
+CLAUDE.local.md
+.claude/settings.local.json
